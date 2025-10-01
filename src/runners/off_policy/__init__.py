@@ -1,0 +1,2 @@
+from .ofp_single_process_trainer import ofp_single_process_trainer
+from .ofp_multiprocess_trainer import ofp_multiprocess_trainer

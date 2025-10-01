@@ -1,0 +1,3 @@
+from .onp_single_process_trainer import onp_single_process_trainer
+
+from .onp_multiprocess_trainer import onp_multiprocess_trainer

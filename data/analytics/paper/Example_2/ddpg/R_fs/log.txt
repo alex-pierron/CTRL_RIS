@@ -1,0 +1,73 @@
+ Both CUDA & CPU are available 
+
+ Choose to use CUDA (GPU)... 
+
+ 
+ Timestamp is 20250928-131040 
+
+Configuration Details:
+
+Environment Configuration:
+  BS_max_power: 20
+  num_BS_antennas: [4, 4]
+  RIS_position: [20, 100]
+  num_RIS_elements: 36
+  num_users: 2
+  user_transmit_power: 100
+  users_position_changing: False
+  user_spawn_limits: [[120, 180], [20, 80]]
+  users_fixed_positions: [[147, 20], [169, 80]]
+  num_eavesdroppers: 2
+  eaves_position_changing: False
+  eaves_fixed_positions: [[140, 40], [150, 75]]
+  env_seed: 84
+  eval_env_seed: 42
+  verbose: True
+  lambda_h: 0.1
+  alpha: 2
+  d_h: 0.05
+  los_only: True
+  rician_factor: 10
+  channel_bandwidth: 10
+  sigma_noise_power_density: -174
+  delta_k_squared: 3.981e-14
+  action_noise_std: 1
+  SI_coefficient: 1
+  HWI_coefficients: [0.01, 0.01, 0.01, 0.01]
+  epsilon_0: 1.0
+  epsilon_min: 0.01
+  decisive_reward_functions: ['minmax_smoothed_reward']
+  informative_reward_functions: []
+  target_date_rate: 2.5
+  target_secrecy_rate: 1.5
+  minmax_smoothed_p: 2
+  user_seed: 84
+
+Network Configuration:
+  algorithm: ddpg
+  actor_linear_layers: [1024, 512, 256, 128]
+  critic_linear_layers: [128, 128, 128]
+  gamma: 0.1
+  optimizer: adam
+  actor_lr: 0.0001
+  critic_lr: 0.001
+  tau: 0.0005
+  critic_tau: 0.001
+  actor_frequency_update: 2
+  critic_frequency_update: 1
+
+Training Parameters:
+  number_episodes: 1
+  max_steps_per_episode: 40000
+  buffer_size: 5000
+  batch_size: 96
+  frequency_information: 500
+  network_save_checkpoint_frequency: 500
+  n_rollout_threads: 1
+  n_training_threads: 1
+  conduct_evaluation: False
+  batch_instead_of_buff: True
+  n_eval_rollout_threads: 1
+  episode_per_eval_env: 1
+  rendering: True
+

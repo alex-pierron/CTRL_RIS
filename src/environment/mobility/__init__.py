@@ -1,0 +1,1 @@
+from .mobility_patterns import grid_mobility

@@ -1,0 +1,885 @@
+2025-09-28 13:09:50,636 - TrainingLogger - VERBOSE - 
+ Initializing positions for replay buffer episode 0 with users and eavesdroppers positions:
+   !~ Users Positions: [[147, 20], [169, 80]] 
+   !~ Eavesdroppers Positions: [[140, 40], [150, 75]] 
+
+2025-09-28 13:09:58,895 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 500
+     |--> Training the NN takes 0.0121 sec on average across 405 steps 
+  |--> LOCAL AVERAGE REWARD 2.970703125, MAX INSTANT REWARD REACHED 5.873831531072513
+  |--> LOCAL AVERAGE BASIC REWARD 2.970703125, MAXIMUM INSTANT BASIC REWARD: 5.8738
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.002405), 'Uplink reward': np.float16(0.007248), 'Eavesdropping reward': np.float16(0.5713), 'Eavesdropping_Downlink_reward': np.float16(0.0393), 'Eavesdropping_Uplink_reward': np.float16(0.5317)}, 1: {'Final reward': np.float16(5.875), 'Downlink reward': np.float16(1.854), 'Uplink reward': np.float16(4.637), 'Eavesdropping reward': np.float16(0.615), 'Eavesdropping_Downlink_reward': np.float16(0.4858), 'Eavesdropping_Uplink_reward': np.float16(0.3765)}}
+ |--> ACTOR LOSS 3.713277816772461, CRITIC LOSS 0.029754698276519775
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5019
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:10:07,662 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 1000
+     |--> Training the NN takes 0.0120 sec on average across 905 steps 
+  |--> LOCAL AVERAGE REWARD 4.5078125, MAX INSTANT REWARD REACHED 5.90584087377818
+  |--> LOCAL AVERAGE BASIC REWARD 4.5078125, MAXIMUM INSTANT BASIC REWARD: 5.9058
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0003328), 'Uplink reward': np.float16(0.000575), 'Eavesdropping reward': np.float16(0.537), 'Eavesdropping_Downlink_reward': np.float16(0.05383), 'Eavesdropping_Uplink_reward': np.float16(0.4875)}, 1: {'Final reward': np.float16(5.906), 'Downlink reward': np.float16(1.857), 'Uplink reward': np.float16(4.688), 'Eavesdropping reward': np.float16(0.6377), 'Eavesdropping_Downlink_reward': np.float16(0.451), 'Eavesdropping_Uplink_reward': np.float16(0.3074)}}
+ |--> ACTOR LOSS 4.298574924468994, CRITIC LOSS 0.01944684609770775
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5006
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:10:17,448 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 1500
+     |--> Training the NN takes 0.0125 sec on average across 1405 steps 
+  |--> LOCAL AVERAGE REWARD 4.80078125, MAX INSTANT REWARD REACHED 5.90584087377818
+  |--> LOCAL AVERAGE BASIC REWARD 4.80078125, MAXIMUM INSTANT BASIC REWARD: 5.9058
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0003328), 'Uplink reward': np.float16(0.000575), 'Eavesdropping reward': np.float16(0.537), 'Eavesdropping_Downlink_reward': np.float16(0.05383), 'Eavesdropping_Uplink_reward': np.float16(0.4875)}, 1: {'Final reward': np.float16(5.906), 'Downlink reward': np.float16(1.857), 'Uplink reward': np.float16(4.688), 'Eavesdropping reward': np.float16(0.6377), 'Eavesdropping_Downlink_reward': np.float16(0.451), 'Eavesdropping_Uplink_reward': np.float16(0.3074)}}
+ |--> ACTOR LOSS 4.667998313903809, CRITIC LOSS 0.017188522964715958
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:10:27,966 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 2000
+     |--> Training the NN takes 0.0129 sec on average across 1905 steps 
+  |--> LOCAL AVERAGE REWARD 5.2734375, MAX INSTANT REWARD REACHED 6.4588526242475615
+  |--> LOCAL AVERAGE BASIC REWARD 5.2734375, MAXIMUM INSTANT BASIC REWARD: 6.4589
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.002611), 'Uplink reward': np.float16(0.00894), 'Eavesdropping reward': np.float16(0.8057), 'Eavesdropping_Downlink_reward': np.float16(0.01823), 'Eavesdropping_Uplink_reward': np.float16(0.787)}, 1: {'Final reward': np.float16(6.457), 'Downlink reward': np.float16(2.307), 'Uplink reward': np.float16(4.594), 'Eavesdropping reward': np.float16(0.4412), 'Eavesdropping_Downlink_reward': np.float16(0.3591), 'Eavesdropping_Uplink_reward': np.float16(0.1821)}}
+ |--> ACTOR LOSS 5.24962854385376, CRITIC LOSS 0.056391552090644836
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:10:39,517 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 2500
+     |--> Training the NN takes 0.0136 sec on average across 2405 steps 
+  |--> LOCAL AVERAGE REWARD 5.328125, MAX INSTANT REWARD REACHED 6.4588526242475615
+  |--> LOCAL AVERAGE BASIC REWARD 5.328125, MAXIMUM INSTANT BASIC REWARD: 6.4589
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.002611), 'Uplink reward': np.float16(0.00894), 'Eavesdropping reward': np.float16(0.8057), 'Eavesdropping_Downlink_reward': np.float16(0.01823), 'Eavesdropping_Uplink_reward': np.float16(0.787)}, 1: {'Final reward': np.float16(6.457), 'Downlink reward': np.float16(2.307), 'Uplink reward': np.float16(4.594), 'Eavesdropping reward': np.float16(0.4412), 'Eavesdropping_Downlink_reward': np.float16(0.3591), 'Eavesdropping_Uplink_reward': np.float16(0.1821)}}
+ |--> ACTOR LOSS 5.1392292976379395, CRITIC LOSS 0.014164097607135773
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:10:52,459 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 3000
+     |--> Training the NN takes 0.0144 sec on average across 2905 steps 
+  |--> LOCAL AVERAGE REWARD 5.17578125, MAX INSTANT REWARD REACHED 6.4588526242475615
+  |--> LOCAL AVERAGE BASIC REWARD 5.17578125, MAXIMUM INSTANT BASIC REWARD: 6.4589
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.002611), 'Uplink reward': np.float16(0.00894), 'Eavesdropping reward': np.float16(0.8057), 'Eavesdropping_Downlink_reward': np.float16(0.01823), 'Eavesdropping_Uplink_reward': np.float16(0.787)}, 1: {'Final reward': np.float16(6.457), 'Downlink reward': np.float16(2.307), 'Uplink reward': np.float16(4.594), 'Eavesdropping reward': np.float16(0.4412), 'Eavesdropping_Downlink_reward': np.float16(0.3591), 'Eavesdropping_Uplink_reward': np.float16(0.1821)}}
+ |--> ACTOR LOSS 5.6019487380981445, CRITIC LOSS 0.018098026514053345
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:11:06,720 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 3500
+     |--> Training the NN takes 0.0152 sec on average across 3405 steps 
+  |--> LOCAL AVERAGE REWARD 5.27734375, MAX INSTANT REWARD REACHED 7.032625032164518
+  |--> LOCAL AVERAGE BASIC REWARD 5.27734375, MAXIMUM INSTANT BASIC REWARD: 7.0326
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.000177), 'Uplink reward': np.float16(0.0006833), 'Eavesdropping reward': np.float16(0.6304), 'Eavesdropping_Downlink_reward': np.float16(0.01637), 'Eavesdropping_Uplink_reward': np.float16(0.6157)}, 1: {'Final reward': np.float16(7.03), 'Downlink reward': np.float16(2.562), 'Uplink reward': np.float16(5.08), 'Eavesdropping reward': np.float16(0.61), 'Eavesdropping_Downlink_reward': np.float16(0.4636), 'Eavesdropping_Uplink_reward': np.float16(0.147)}}
+ |--> ACTOR LOSS 5.497341156005859, CRITIC LOSS 0.013290013186633587
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:11:24,797 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 4000
+     |--> Training the NN takes 0.0166 sec on average across 3905 steps 
+  |--> LOCAL AVERAGE REWARD 5.4921875, MAX INSTANT REWARD REACHED 7.135775781281859
+  |--> LOCAL AVERAGE BASIC REWARD 5.4921875, MAXIMUM INSTANT BASIC REWARD: 7.1358
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001429), 'Uplink reward': np.float16(0.002504), 'Eavesdropping reward': np.float16(0.8936), 'Eavesdropping_Downlink_reward': np.float16(0.003777), 'Eavesdropping_Uplink_reward': np.float16(0.8906)}, 1: {'Final reward': np.float16(7.137), 'Downlink reward': np.float16(2.467), 'Uplink reward': np.float16(5.176), 'Eavesdropping reward': np.float16(0.506), 'Eavesdropping_Downlink_reward': np.float16(0.3643), 'Eavesdropping_Uplink_reward': np.float16(0.1417)}}
+ |--> ACTOR LOSS 5.807504177093506, CRITIC LOSS 0.032863371074199677
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:11:45,795 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 4500
+     |--> Training the NN takes 0.0181 sec on average across 4405 steps 
+  |--> LOCAL AVERAGE REWARD 5.77734375, MAX INSTANT REWARD REACHED 7.459033920259132
+  |--> LOCAL AVERAGE BASIC REWARD 5.77734375, MAXIMUM INSTANT BASIC REWARD: 7.4590
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001479), 'Uplink reward': np.float16(0.002048), 'Eavesdropping reward': np.float16(0.749), 'Eavesdropping_Downlink_reward': np.float16(0.00572), 'Eavesdropping_Uplink_reward': np.float16(0.745)}, 1: {'Final reward': np.float16(7.46), 'Downlink reward': np.float16(2.959), 'Uplink reward': np.float16(5.254), 'Eavesdropping reward': np.float16(0.7563), 'Eavesdropping_Downlink_reward': np.float16(0.746), 'Eavesdropping_Uplink_reward': np.float16(0.0926)}}
+ |--> ACTOR LOSS 5.7743330001831055, CRITIC LOSS 0.022187262773513794
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:12:08,172 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 5000
+     |--> Training the NN takes 0.0196 sec on average across 4905 steps 
+  |--> LOCAL AVERAGE REWARD 5.75, MAX INSTANT REWARD REACHED 7.556958008040475
+  |--> LOCAL AVERAGE BASIC REWARD 5.75, MAXIMUM INSTANT BASIC REWARD: 7.5570
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.001682), 'Uplink reward': np.float16(0.005337), 'Eavesdropping reward': np.float16(0.7803), 'Eavesdropping_Downlink_reward': np.float16(0.01762), 'Eavesdropping_Uplink_reward': np.float16(0.767)}, 1: {'Final reward': np.float16(7.56), 'Downlink reward': np.float16(3.018), 'Uplink reward': np.float16(5.22), 'Eavesdropping reward': np.float16(0.6777), 'Eavesdropping_Downlink_reward': np.float16(0.6357), 'Eavesdropping_Uplink_reward': np.float16(0.0627)}}
+ |--> ACTOR LOSS 5.7146148681640625, CRITIC LOSS 0.045871835201978683
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:12:30,415 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 5500
+     |--> Training the NN takes 0.0208 sec on average across 5405 steps 
+  |--> LOCAL AVERAGE REWARD 5.60546875, MAX INSTANT REWARD REACHED 7.695923938905672
+  |--> LOCAL AVERAGE BASIC REWARD 5.60546875, MAXIMUM INSTANT BASIC REWARD: 7.6959
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001758), 'Uplink reward': np.float16(0.00199), 'Eavesdropping reward': np.float16(0.9756), 'Eavesdropping_Downlink_reward': np.float16(0.005386), 'Eavesdropping_Uplink_reward': np.float16(0.972)}, 1: {'Final reward': np.float16(7.695), 'Downlink reward': np.float16(3.154), 'Uplink reward': np.float16(5.297), 'Eavesdropping reward': np.float16(0.7573), 'Eavesdropping_Downlink_reward': np.float16(0.66), 'Eavesdropping_Uplink_reward': np.float16(0.0971)}}
+ |--> ACTOR LOSS 6.014657497406006, CRITIC LOSS 0.012385755777359009
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:12:52,625 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 6000
+     |--> Training the NN takes 0.0218 sec on average across 5905 steps 
+  |--> LOCAL AVERAGE REWARD 5.5859375, MAX INSTANT REWARD REACHED 7.695923938905672
+  |--> LOCAL AVERAGE BASIC REWARD 5.5859375, MAXIMUM INSTANT BASIC REWARD: 7.6959
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001758), 'Uplink reward': np.float16(0.00199), 'Eavesdropping reward': np.float16(0.9756), 'Eavesdropping_Downlink_reward': np.float16(0.005386), 'Eavesdropping_Uplink_reward': np.float16(0.972)}, 1: {'Final reward': np.float16(7.695), 'Downlink reward': np.float16(3.154), 'Uplink reward': np.float16(5.297), 'Eavesdropping reward': np.float16(0.7573), 'Eavesdropping_Downlink_reward': np.float16(0.66), 'Eavesdropping_Uplink_reward': np.float16(0.0971)}}
+ |--> ACTOR LOSS 6.220138072967529, CRITIC LOSS 0.021304069086909294
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:13:14,991 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 6500
+     |--> Training the NN takes 0.0227 sec on average across 6405 steps 
+  |--> LOCAL AVERAGE REWARD 5.828125, MAX INSTANT REWARD REACHED 7.695923938905672
+  |--> LOCAL AVERAGE BASIC REWARD 5.828125, MAXIMUM INSTANT BASIC REWARD: 7.6959
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001758), 'Uplink reward': np.float16(0.00199), 'Eavesdropping reward': np.float16(0.9756), 'Eavesdropping_Downlink_reward': np.float16(0.005386), 'Eavesdropping_Uplink_reward': np.float16(0.972)}, 1: {'Final reward': np.float16(7.695), 'Downlink reward': np.float16(3.154), 'Uplink reward': np.float16(5.297), 'Eavesdropping reward': np.float16(0.7573), 'Eavesdropping_Downlink_reward': np.float16(0.66), 'Eavesdropping_Uplink_reward': np.float16(0.0971)}}
+ |--> ACTOR LOSS 6.2646074295043945, CRITIC LOSS 0.02331850491464138
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:13:35,743 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 7000
+     |--> Training the NN takes 0.0233 sec on average across 6905 steps 
+  |--> LOCAL AVERAGE REWARD 6.16015625, MAX INSTANT REWARD REACHED 7.695923938905672
+  |--> LOCAL AVERAGE BASIC REWARD 6.16015625, MAXIMUM INSTANT BASIC REWARD: 7.6959
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001758), 'Uplink reward': np.float16(0.00199), 'Eavesdropping reward': np.float16(0.9756), 'Eavesdropping_Downlink_reward': np.float16(0.005386), 'Eavesdropping_Uplink_reward': np.float16(0.972)}, 1: {'Final reward': np.float16(7.695), 'Downlink reward': np.float16(3.154), 'Uplink reward': np.float16(5.297), 'Eavesdropping reward': np.float16(0.7573), 'Eavesdropping_Downlink_reward': np.float16(0.66), 'Eavesdropping_Uplink_reward': np.float16(0.0971)}}
+ |--> ACTOR LOSS 6.546302795410156, CRITIC LOSS 0.020928746089339256
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:13:57,175 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 7500
+     |--> Training the NN takes 0.0239 sec on average across 7405 steps 
+  |--> LOCAL AVERAGE REWARD 6.52734375, MAX INSTANT REWARD REACHED 7.695923938905672
+  |--> LOCAL AVERAGE BASIC REWARD 6.52734375, MAXIMUM INSTANT BASIC REWARD: 7.6959
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0001758), 'Uplink reward': np.float16(0.00199), 'Eavesdropping reward': np.float16(0.9756), 'Eavesdropping_Downlink_reward': np.float16(0.005386), 'Eavesdropping_Uplink_reward': np.float16(0.972)}, 1: {'Final reward': np.float16(7.695), 'Downlink reward': np.float16(3.154), 'Uplink reward': np.float16(5.297), 'Eavesdropping reward': np.float16(0.7573), 'Eavesdropping_Downlink_reward': np.float16(0.66), 'Eavesdropping_Uplink_reward': np.float16(0.0971)}}
+ |--> ACTOR LOSS 6.67885684967041, CRITIC LOSS 0.01304699294269085
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:14:19,403 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 8000
+     |--> Training the NN takes 0.0245 sec on average across 7905 steps 
+  |--> LOCAL AVERAGE REWARD 7.2109375, MAX INSTANT REWARD REACHED 8.516722564689582
+  |--> LOCAL AVERAGE BASIC REWARD 7.2109375, MAXIMUM INSTANT BASIC REWARD: 8.5167
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0006733), 'Uplink reward': np.float16(0.01059), 'Eavesdropping reward': np.float16(1.005), 'Eavesdropping_Downlink_reward': np.float16(0.002127), 'Eavesdropping_Uplink_reward': np.float16(1.004)}, 1: {'Final reward': np.float16(8.516), 'Downlink reward': np.float16(4.07), 'Uplink reward': np.float16(5.105), 'Eavesdropping reward': np.float16(0.659), 'Eavesdropping_Downlink_reward': np.float16(0.6357), 'Eavesdropping_Uplink_reward': np.float16(0.02347)}}
+ |--> ACTOR LOSS 6.978964805603027, CRITIC LOSS 0.0345350056886673
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:14:41,365 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 8500
+     |--> Training the NN takes 0.0250 sec on average across 8405 steps 
+  |--> LOCAL AVERAGE REWARD 6.7890625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.7890625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.3377838134765625, CRITIC LOSS 0.049491506069898605
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:15:02,935 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 9000
+     |--> Training the NN takes 0.0255 sec on average across 8905 steps 
+  |--> LOCAL AVERAGE REWARD 6.78125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.78125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.301480770111084, CRITIC LOSS 0.04551131650805473
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:15:22,457 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 9500
+     |--> Training the NN takes 0.0257 sec on average across 9405 steps 
+  |--> LOCAL AVERAGE REWARD 6.49609375, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.49609375, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.299030303955078, CRITIC LOSS 0.03945424407720566
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:15:42,949 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 10000
+     |--> Training the NN takes 0.0259 sec on average across 9905 steps 
+  |--> LOCAL AVERAGE REWARD 6.96484375, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.96484375, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.751450538635254, CRITIC LOSS 0.10755225270986557
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:16:05,157 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 10500
+     |--> Training the NN takes 0.0263 sec on average across 10405 steps 
+  |--> LOCAL AVERAGE REWARD 7.1953125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 7.1953125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.747209548950195, CRITIC LOSS 0.06272586435079575
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:16:26,302 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 11000
+     |--> Training the NN takes 0.0266 sec on average across 10905 steps 
+  |--> LOCAL AVERAGE REWARD 6.98828125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.98828125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.682454586029053, CRITIC LOSS 0.09544086456298828
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:16:48,247 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 11500
+     |--> Training the NN takes 0.0268 sec on average across 11405 steps 
+  |--> LOCAL AVERAGE REWARD 6.0859375, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.0859375, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.835810661315918, CRITIC LOSS 0.1503145694732666
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:17:09,554 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 12000
+     |--> Training the NN takes 0.0271 sec on average across 11905 steps 
+  |--> LOCAL AVERAGE REWARD 5.9765625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 5.9765625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.622649192810059, CRITIC LOSS 0.08239644020795822
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:17:31,285 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 12500
+     |--> Training the NN takes 0.0273 sec on average across 12405 steps 
+  |--> LOCAL AVERAGE REWARD 5.15625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 5.15625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.351716041564941, CRITIC LOSS 0.12740516662597656
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5563
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:17:52,796 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 13000
+     |--> Training the NN takes 0.0275 sec on average across 12905 steps 
+  |--> LOCAL AVERAGE REWARD 6.03125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.03125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.647692680358887, CRITIC LOSS 0.18296556174755096
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:18:14,119 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 13500
+     |--> Training the NN takes 0.0277 sec on average across 13405 steps 
+  |--> LOCAL AVERAGE REWARD 6.078125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.078125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.228911399841309, CRITIC LOSS 0.26864516735076904
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:18:35,260 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 14000
+     |--> Training the NN takes 0.0279 sec on average across 13905 steps 
+  |--> LOCAL AVERAGE REWARD 6.03515625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.03515625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.107629776000977, CRITIC LOSS 0.16303521394729614
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:18:56,873 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 14500
+     |--> Training the NN takes 0.0280 sec on average across 14405 steps 
+  |--> LOCAL AVERAGE REWARD 6.21875, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.21875, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.122833251953125, CRITIC LOSS 0.15276867151260376
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:19:18,697 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 15000
+     |--> Training the NN takes 0.0282 sec on average across 14905 steps 
+  |--> LOCAL AVERAGE REWARD 6.3359375, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.3359375, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.2768874168396, CRITIC LOSS 0.20736591517925262
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:19:40,025 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 15500
+     |--> Training the NN takes 0.0283 sec on average across 15405 steps 
+  |--> LOCAL AVERAGE REWARD 6.40625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.40625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.326419353485107, CRITIC LOSS 0.15368080139160156
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:20:00,024 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 16000
+     |--> Training the NN takes 0.0284 sec on average across 15905 steps 
+  |--> LOCAL AVERAGE REWARD 6.34765625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.34765625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.280719757080078, CRITIC LOSS 0.2838931679725647
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:20:20,263 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 16500
+     |--> Training the NN takes 0.0285 sec on average across 16405 steps 
+  |--> LOCAL AVERAGE REWARD 6.6015625, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.6015625, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.560269355773926, CRITIC LOSS 0.12692707777023315
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:20:40,563 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 17000
+     |--> Training the NN takes 0.0285 sec on average across 16905 steps 
+  |--> LOCAL AVERAGE REWARD 6.53125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.53125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.706256866455078, CRITIC LOSS 0.20112471282482147
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:21:01,026 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 17500
+     |--> Training the NN takes 0.0286 sec on average across 17405 steps 
+  |--> LOCAL AVERAGE REWARD 6.64453125, MAX INSTANT REWARD REACHED 8.860833834747847
+  |--> LOCAL AVERAGE BASIC REWARD 6.64453125, MAXIMUM INSTANT BASIC REWARD: 8.8608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(4.095e-05), 'Uplink reward': np.float16(0.001575), 'Eavesdropping reward': np.float16(1.285), 'Eavesdropping_Downlink_reward': np.float16(0.0007443), 'Eavesdropping_Uplink_reward': np.float16(1.284)}, 1: {'Final reward': np.float16(8.86), 'Downlink reward': np.float16(3.967), 'Uplink reward': np.float16(5.438), 'Eavesdropping reward': np.float16(0.544), 'Eavesdropping_Downlink_reward': np.float16(0.514), 'Eavesdropping_Uplink_reward': np.float16(0.0354)}}
+ |--> ACTOR LOSS 7.9505743980407715, CRITIC LOSS 0.12752535939216614
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:21:20,649 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 18000
+     |--> Training the NN takes 0.0286 sec on average across 17905 steps 
+  |--> LOCAL AVERAGE REWARD 6.9296875, MAX INSTANT REWARD REACHED 9.132392133176277
+  |--> LOCAL AVERAGE BASIC REWARD 6.9296875, MAXIMUM INSTANT BASIC REWARD: 9.1324
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.96e-05), 'Uplink reward': np.float16(0.0004992), 'Eavesdropping reward': np.float16(0.8003), 'Eavesdropping_Downlink_reward': np.float16(0.002275), 'Eavesdropping_Uplink_reward': np.float16(0.799)}, 1: {'Final reward': np.float16(9.13), 'Downlink reward': np.float16(3.988), 'Uplink reward': np.float16(5.633), 'Eavesdropping reward': np.float16(0.4893), 'Eavesdropping_Downlink_reward': np.float16(0.2732), 'Eavesdropping_Uplink_reward': np.float16(0.2161)}}
+ |--> ACTOR LOSS 7.963663101196289, CRITIC LOSS 0.21919892728328705
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:21:42,807 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 18500
+     |--> Training the NN takes 0.0288 sec on average across 18405 steps 
+  |--> LOCAL AVERAGE REWARD 7.1484375, MAX INSTANT REWARD REACHED 9.132392133176277
+  |--> LOCAL AVERAGE BASIC REWARD 7.1484375, MAXIMUM INSTANT BASIC REWARD: 9.1324
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.96e-05), 'Uplink reward': np.float16(0.0004992), 'Eavesdropping reward': np.float16(0.8003), 'Eavesdropping_Downlink_reward': np.float16(0.002275), 'Eavesdropping_Uplink_reward': np.float16(0.799)}, 1: {'Final reward': np.float16(9.13), 'Downlink reward': np.float16(3.988), 'Uplink reward': np.float16(5.633), 'Eavesdropping reward': np.float16(0.4893), 'Eavesdropping_Downlink_reward': np.float16(0.2732), 'Eavesdropping_Uplink_reward': np.float16(0.2161)}}
+ |--> ACTOR LOSS 8.332565307617188, CRITIC LOSS 0.08740542829036713
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:22:03,399 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 19000
+     |--> Training the NN takes 0.0288 sec on average across 18905 steps 
+  |--> LOCAL AVERAGE REWARD 6.7265625, MAX INSTANT REWARD REACHED 9.132392133176277
+  |--> LOCAL AVERAGE BASIC REWARD 6.7265625, MAXIMUM INSTANT BASIC REWARD: 9.1324
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.96e-05), 'Uplink reward': np.float16(0.0004992), 'Eavesdropping reward': np.float16(0.8003), 'Eavesdropping_Downlink_reward': np.float16(0.002275), 'Eavesdropping_Uplink_reward': np.float16(0.799)}, 1: {'Final reward': np.float16(9.13), 'Downlink reward': np.float16(3.988), 'Uplink reward': np.float16(5.633), 'Eavesdropping reward': np.float16(0.4893), 'Eavesdropping_Downlink_reward': np.float16(0.2732), 'Eavesdropping_Uplink_reward': np.float16(0.2161)}}
+ |--> ACTOR LOSS 7.866738796234131, CRITIC LOSS 0.14910459518432617
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:22:23,695 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 19500
+     |--> Training the NN takes 0.0289 sec on average across 19405 steps 
+  |--> LOCAL AVERAGE REWARD 6.73046875, MAX INSTANT REWARD REACHED 9.132392133176277
+  |--> LOCAL AVERAGE BASIC REWARD 6.73046875, MAXIMUM INSTANT BASIC REWARD: 9.1324
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.96e-05), 'Uplink reward': np.float16(0.0004992), 'Eavesdropping reward': np.float16(0.8003), 'Eavesdropping_Downlink_reward': np.float16(0.002275), 'Eavesdropping_Uplink_reward': np.float16(0.799)}, 1: {'Final reward': np.float16(9.13), 'Downlink reward': np.float16(3.988), 'Uplink reward': np.float16(5.633), 'Eavesdropping reward': np.float16(0.4893), 'Eavesdropping_Downlink_reward': np.float16(0.2732), 'Eavesdropping_Uplink_reward': np.float16(0.2161)}}
+ |--> ACTOR LOSS 7.844974517822266, CRITIC LOSS 0.15055525302886963
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:22:43,912 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 20000
+     |--> Training the NN takes 0.0289 sec on average across 19905 steps 
+  |--> LOCAL AVERAGE REWARD 7.19921875, MAX INSTANT REWARD REACHED 9.132392133176277
+  |--> LOCAL AVERAGE BASIC REWARD 7.19921875, MAXIMUM INSTANT BASIC REWARD: 9.1324
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.96e-05), 'Uplink reward': np.float16(0.0004992), 'Eavesdropping reward': np.float16(0.8003), 'Eavesdropping_Downlink_reward': np.float16(0.002275), 'Eavesdropping_Uplink_reward': np.float16(0.799)}, 1: {'Final reward': np.float16(9.13), 'Downlink reward': np.float16(3.988), 'Uplink reward': np.float16(5.633), 'Eavesdropping reward': np.float16(0.4893), 'Eavesdropping_Downlink_reward': np.float16(0.2732), 'Eavesdropping_Uplink_reward': np.float16(0.2161)}}
+ |--> ACTOR LOSS 8.443763732910156, CRITIC LOSS 0.12779703736305237
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:23:04,710 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 20500
+     |--> Training the NN takes 0.0290 sec on average across 20405 steps 
+  |--> LOCAL AVERAGE REWARD 7.5390625, MAX INSTANT REWARD REACHED 9.904325173818357
+  |--> LOCAL AVERAGE BASIC REWARD 7.5390625, MAXIMUM INSTANT BASIC REWARD: 9.9043
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0002468), 'Uplink reward': np.float16(0.005672), 'Eavesdropping reward': np.float16(1.111), 'Eavesdropping_Downlink_reward': np.float16(0.0002873), 'Eavesdropping_Uplink_reward': np.float16(1.111)}, 1: {'Final reward': np.float16(9.91), 'Downlink reward': np.float16(4.793), 'Uplink reward': np.float16(5.45), 'Eavesdropping reward': np.float16(0.3374), 'Eavesdropping_Downlink_reward': np.float16(0.1807), 'Eavesdropping_Uplink_reward': np.float16(0.2284)}}
+ |--> ACTOR LOSS 8.672466278076172, CRITIC LOSS 0.19365012645721436
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:23:25,582 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 21000
+     |--> Training the NN takes 0.0290 sec on average across 20905 steps 
+  |--> LOCAL AVERAGE REWARD 8.15625, MAX INSTANT REWARD REACHED 10.051211697659692
+  |--> LOCAL AVERAGE BASIC REWARD 8.15625, MAXIMUM INSTANT BASIC REWARD: 10.0512
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(1.025e-05), 'Uplink reward': np.float16(0.000108), 'Eavesdropping reward': np.float16(1.302), 'Eavesdropping_Downlink_reward': np.float16(0.0005527), 'Eavesdropping_Uplink_reward': np.float16(1.302)}, 1: {'Final reward': np.float16(10.055), 'Downlink reward': np.float16(4.63), 'Uplink reward': np.float16(5.715), 'Eavesdropping reward': np.float16(0.2932), 'Eavesdropping_Downlink_reward': np.float16(0.1624), 'Eavesdropping_Uplink_reward': np.float16(0.1307)}}
+ |--> ACTOR LOSS 8.83896255493164, CRITIC LOSS 0.18866750597953796
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:23:45,953 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 21500
+     |--> Training the NN takes 0.0291 sec on average across 21405 steps 
+  |--> LOCAL AVERAGE REWARD 7.30859375, MAX INSTANT REWARD REACHED 10.390612334749035
+  |--> LOCAL AVERAGE BASIC REWARD 7.30859375, MAXIMUM INSTANT BASIC REWARD: 10.3906
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.254e-05), 'Uplink reward': np.float16(0.0008364), 'Eavesdropping reward': np.float16(1.034), 'Eavesdropping_Downlink_reward': np.float16(0.0009704), 'Eavesdropping_Uplink_reward': np.float16(1.034)}, 1: {'Final reward': np.float16(10.39), 'Downlink reward': np.float16(4.742), 'Uplink reward': np.float16(6.07), 'Eavesdropping reward': np.float16(0.4253), 'Eavesdropping_Downlink_reward': np.float16(0.3528), 'Eavesdropping_Uplink_reward': np.float16(0.1984)}}
+ |--> ACTOR LOSS 8.76522445678711, CRITIC LOSS 0.17739729583263397
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5002
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:24:06,230 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 22000
+     |--> Training the NN takes 0.0291 sec on average across 21905 steps 
+  |--> LOCAL AVERAGE REWARD 7.44140625, MAX INSTANT REWARD REACHED 10.390612334749035
+  |--> LOCAL AVERAGE BASIC REWARD 7.44140625, MAXIMUM INSTANT BASIC REWARD: 10.3906
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.254e-05), 'Uplink reward': np.float16(0.0008364), 'Eavesdropping reward': np.float16(1.034), 'Eavesdropping_Downlink_reward': np.float16(0.0009704), 'Eavesdropping_Uplink_reward': np.float16(1.034)}, 1: {'Final reward': np.float16(10.39), 'Downlink reward': np.float16(4.742), 'Uplink reward': np.float16(6.07), 'Eavesdropping reward': np.float16(0.4253), 'Eavesdropping_Downlink_reward': np.float16(0.3528), 'Eavesdropping_Uplink_reward': np.float16(0.1984)}}
+ |--> ACTOR LOSS 8.981209754943848, CRITIC LOSS 0.14510881900787354
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:24:27,103 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 22500
+     |--> Training the NN takes 0.0292 sec on average across 22405 steps 
+  |--> LOCAL AVERAGE REWARD 7.54296875, MAX INSTANT REWARD REACHED 10.390612334749035
+  |--> LOCAL AVERAGE BASIC REWARD 7.54296875, MAXIMUM INSTANT BASIC REWARD: 10.3906
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.254e-05), 'Uplink reward': np.float16(0.0008364), 'Eavesdropping reward': np.float16(1.034), 'Eavesdropping_Downlink_reward': np.float16(0.0009704), 'Eavesdropping_Uplink_reward': np.float16(1.034)}, 1: {'Final reward': np.float16(10.39), 'Downlink reward': np.float16(4.742), 'Uplink reward': np.float16(6.07), 'Eavesdropping reward': np.float16(0.4253), 'Eavesdropping_Downlink_reward': np.float16(0.3528), 'Eavesdropping_Uplink_reward': np.float16(0.1984)}}
+ |--> ACTOR LOSS 8.998562812805176, CRITIC LOSS 0.219499871134758
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:24:47,575 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 23000
+     |--> Training the NN takes 0.0292 sec on average across 22905 steps 
+  |--> LOCAL AVERAGE REWARD 7.48828125, MAX INSTANT REWARD REACHED 10.390612334749035
+  |--> LOCAL AVERAGE BASIC REWARD 7.48828125, MAXIMUM INSTANT BASIC REWARD: 10.3906
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(7.254e-05), 'Uplink reward': np.float16(0.0008364), 'Eavesdropping reward': np.float16(1.034), 'Eavesdropping_Downlink_reward': np.float16(0.0009704), 'Eavesdropping_Uplink_reward': np.float16(1.034)}, 1: {'Final reward': np.float16(10.39), 'Downlink reward': np.float16(4.742), 'Uplink reward': np.float16(6.07), 'Eavesdropping reward': np.float16(0.4253), 'Eavesdropping_Downlink_reward': np.float16(0.3528), 'Eavesdropping_Uplink_reward': np.float16(0.1984)}}
+ |--> ACTOR LOSS 9.39651870727539, CRITIC LOSS 0.1485382616519928
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:25:08,464 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 23500
+     |--> Training the NN takes 0.0292 sec on average across 23405 steps 
+  |--> LOCAL AVERAGE REWARD 8.2109375, MAX INSTANT REWARD REACHED 10.479791728255911
+  |--> LOCAL AVERAGE BASIC REWARD 8.2109375, MAXIMUM INSTANT BASIC REWARD: 10.4798
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.00010544), 'Uplink reward': np.float16(0.001278), 'Eavesdropping reward': np.float16(0.9), 'Eavesdropping_Downlink_reward': np.float16(0.0005083), 'Eavesdropping_Uplink_reward': np.float16(0.9)}, 1: {'Final reward': np.float16(10.48), 'Downlink reward': np.float16(4.76), 'Uplink reward': np.float16(6.16), 'Eavesdropping reward': np.float16(0.4424), 'Eavesdropping_Downlink_reward': np.float16(0.1835), 'Eavesdropping_Uplink_reward': np.float16(0.2607)}}
+ |--> ACTOR LOSS 9.121920585632324, CRITIC LOSS 0.18539540469646454
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:25:29,188 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 24000
+     |--> Training the NN takes 0.0293 sec on average across 23905 steps 
+  |--> LOCAL AVERAGE REWARD 7.578125, MAX INSTANT REWARD REACHED 10.479791728255911
+  |--> LOCAL AVERAGE BASIC REWARD 7.578125, MAXIMUM INSTANT BASIC REWARD: 10.4798
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.00010544), 'Uplink reward': np.float16(0.001278), 'Eavesdropping reward': np.float16(0.9), 'Eavesdropping_Downlink_reward': np.float16(0.0005083), 'Eavesdropping_Uplink_reward': np.float16(0.9)}, 1: {'Final reward': np.float16(10.48), 'Downlink reward': np.float16(4.76), 'Uplink reward': np.float16(6.16), 'Eavesdropping reward': np.float16(0.4424), 'Eavesdropping_Downlink_reward': np.float16(0.1835), 'Eavesdropping_Uplink_reward': np.float16(0.2607)}}
+ |--> ACTOR LOSS 9.449052810668945, CRITIC LOSS 0.19277948141098022
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:25:49,986 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 24500
+     |--> Training the NN takes 0.0293 sec on average across 24405 steps 
+  |--> LOCAL AVERAGE REWARD 7.60546875, MAX INSTANT REWARD REACHED 10.479791728255911
+  |--> LOCAL AVERAGE BASIC REWARD 7.60546875, MAXIMUM INSTANT BASIC REWARD: 10.4798
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.00010544), 'Uplink reward': np.float16(0.001278), 'Eavesdropping reward': np.float16(0.9), 'Eavesdropping_Downlink_reward': np.float16(0.0005083), 'Eavesdropping_Uplink_reward': np.float16(0.9)}, 1: {'Final reward': np.float16(10.48), 'Downlink reward': np.float16(4.76), 'Uplink reward': np.float16(6.16), 'Eavesdropping reward': np.float16(0.4424), 'Eavesdropping_Downlink_reward': np.float16(0.1835), 'Eavesdropping_Uplink_reward': np.float16(0.2607)}}
+ |--> ACTOR LOSS 9.56671142578125, CRITIC LOSS 0.21763472259044647
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:26:10,346 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 25000
+     |--> Training the NN takes 0.0294 sec on average across 24905 steps 
+  |--> LOCAL AVERAGE REWARD 7.30078125, MAX INSTANT REWARD REACHED 10.479791728255911
+  |--> LOCAL AVERAGE BASIC REWARD 7.30078125, MAXIMUM INSTANT BASIC REWARD: 10.4798
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.00010544), 'Uplink reward': np.float16(0.001278), 'Eavesdropping reward': np.float16(0.9), 'Eavesdropping_Downlink_reward': np.float16(0.0005083), 'Eavesdropping_Uplink_reward': np.float16(0.9)}, 1: {'Final reward': np.float16(10.48), 'Downlink reward': np.float16(4.76), 'Uplink reward': np.float16(6.16), 'Eavesdropping reward': np.float16(0.4424), 'Eavesdropping_Downlink_reward': np.float16(0.1835), 'Eavesdropping_Uplink_reward': np.float16(0.2607)}}
+ |--> ACTOR LOSS 9.449809074401855, CRITIC LOSS 0.11400437355041504
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:26:30,967 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 25500
+     |--> Training the NN takes 0.0294 sec on average across 25405 steps 
+  |--> LOCAL AVERAGE REWARD 7.58984375, MAX INSTANT REWARD REACHED 10.511324357838129
+  |--> LOCAL AVERAGE BASIC REWARD 7.58984375, MAXIMUM INSTANT BASIC REWARD: 10.5113
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(8.17e-05), 'Uplink reward': np.float16(0.00521), 'Eavesdropping reward': np.float16(0.863), 'Eavesdropping_Downlink_reward': np.float16(0.00010335), 'Eavesdropping_Uplink_reward': np.float16(0.863)}, 1: {'Final reward': np.float16(10.51), 'Downlink reward': np.float16(4.992), 'Uplink reward': np.float16(5.926), 'Eavesdropping reward': np.float16(0.4084), 'Eavesdropping_Downlink_reward': np.float16(0.2015), 'Eavesdropping_Uplink_reward': np.float16(0.3657)}}
+ |--> ACTOR LOSS 9.344404220581055, CRITIC LOSS 0.14511638879776
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:26:51,729 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 26000
+     |--> Training the NN takes 0.0294 sec on average across 25905 steps 
+  |--> LOCAL AVERAGE REWARD 7.84765625, MAX INSTANT REWARD REACHED 10.511324357838129
+  |--> LOCAL AVERAGE BASIC REWARD 7.84765625, MAXIMUM INSTANT BASIC REWARD: 10.5113
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(8.17e-05), 'Uplink reward': np.float16(0.00521), 'Eavesdropping reward': np.float16(0.863), 'Eavesdropping_Downlink_reward': np.float16(0.00010335), 'Eavesdropping_Uplink_reward': np.float16(0.863)}, 1: {'Final reward': np.float16(10.51), 'Downlink reward': np.float16(4.992), 'Uplink reward': np.float16(5.926), 'Eavesdropping reward': np.float16(0.4084), 'Eavesdropping_Downlink_reward': np.float16(0.2015), 'Eavesdropping_Uplink_reward': np.float16(0.3657)}}
+ |--> ACTOR LOSS 8.974102020263672, CRITIC LOSS 0.10865052789449692
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:27:13,323 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 26500
+     |--> Training the NN takes 0.0295 sec on average across 26405 steps 
+  |--> LOCAL AVERAGE REWARD 8.5859375, MAX INSTANT REWARD REACHED 10.511324357838129
+  |--> LOCAL AVERAGE BASIC REWARD 8.5859375, MAXIMUM INSTANT BASIC REWARD: 10.5113
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(8.17e-05), 'Uplink reward': np.float16(0.00521), 'Eavesdropping reward': np.float16(0.863), 'Eavesdropping_Downlink_reward': np.float16(0.00010335), 'Eavesdropping_Uplink_reward': np.float16(0.863)}, 1: {'Final reward': np.float16(10.51), 'Downlink reward': np.float16(4.992), 'Uplink reward': np.float16(5.926), 'Eavesdropping reward': np.float16(0.4084), 'Eavesdropping_Downlink_reward': np.float16(0.2015), 'Eavesdropping_Uplink_reward': np.float16(0.3657)}}
+ |--> ACTOR LOSS 9.436161041259766, CRITIC LOSS 0.09003257751464844
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:27:35,267 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 27000
+     |--> Training the NN takes 0.0295 sec on average across 26905 steps 
+  |--> LOCAL AVERAGE REWARD 7.9921875, MAX INSTANT REWARD REACHED 10.511324357838129
+  |--> LOCAL AVERAGE BASIC REWARD 7.9921875, MAXIMUM INSTANT BASIC REWARD: 10.5113
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(8.17e-05), 'Uplink reward': np.float16(0.00521), 'Eavesdropping reward': np.float16(0.863), 'Eavesdropping_Downlink_reward': np.float16(0.00010335), 'Eavesdropping_Uplink_reward': np.float16(0.863)}, 1: {'Final reward': np.float16(10.51), 'Downlink reward': np.float16(4.992), 'Uplink reward': np.float16(5.926), 'Eavesdropping reward': np.float16(0.4084), 'Eavesdropping_Downlink_reward': np.float16(0.2015), 'Eavesdropping_Uplink_reward': np.float16(0.3657)}}
+ |--> ACTOR LOSS 9.307703971862793, CRITIC LOSS 0.1378255933523178
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:27:56,647 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 27500
+     |--> Training the NN takes 0.0296 sec on average across 27405 steps 
+  |--> LOCAL AVERAGE REWARD 7.96484375, MAX INSTANT REWARD REACHED 10.511324357838129
+  |--> LOCAL AVERAGE BASIC REWARD 7.96484375, MAXIMUM INSTANT BASIC REWARD: 10.5113
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(8.17e-05), 'Uplink reward': np.float16(0.00521), 'Eavesdropping reward': np.float16(0.863), 'Eavesdropping_Downlink_reward': np.float16(0.00010335), 'Eavesdropping_Uplink_reward': np.float16(0.863)}, 1: {'Final reward': np.float16(10.51), 'Downlink reward': np.float16(4.992), 'Uplink reward': np.float16(5.926), 'Eavesdropping reward': np.float16(0.4084), 'Eavesdropping_Downlink_reward': np.float16(0.2015), 'Eavesdropping_Uplink_reward': np.float16(0.3657)}}
+ |--> ACTOR LOSS 9.522588729858398, CRITIC LOSS 0.12615147233009338
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:28:17,097 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 28000
+     |--> Training the NN takes 0.0296 sec on average across 27905 steps 
+  |--> LOCAL AVERAGE REWARD 8.234375, MAX INSTANT REWARD REACHED 10.957538467505909
+  |--> LOCAL AVERAGE BASIC REWARD 8.234375, MAXIMUM INSTANT BASIC REWARD: 10.9575
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.000163), 'Uplink reward': np.float16(0.001538), 'Eavesdropping reward': np.float16(1.232), 'Eavesdropping_Downlink_reward': np.float16(0.000533), 'Eavesdropping_Uplink_reward': np.float16(1.232)}, 1: {'Final reward': np.float16(10.96), 'Downlink reward': np.float16(5.19), 'Uplink reward': np.float16(6.152), 'Eavesdropping reward': np.float16(0.3843), 'Eavesdropping_Downlink_reward': np.float16(0.2069), 'Eavesdropping_Uplink_reward': np.float16(0.1774)}}
+ |--> ACTOR LOSS 9.249136924743652, CRITIC LOSS 0.16491800546646118
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:28:37,221 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 28500
+     |--> Training the NN takes 0.0296 sec on average across 28405 steps 
+  |--> LOCAL AVERAGE REWARD 8.3515625, MAX INSTANT REWARD REACHED 10.957538467505909
+  |--> LOCAL AVERAGE BASIC REWARD 8.3515625, MAXIMUM INSTANT BASIC REWARD: 10.9575
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.000163), 'Uplink reward': np.float16(0.001538), 'Eavesdropping reward': np.float16(1.232), 'Eavesdropping_Downlink_reward': np.float16(0.000533), 'Eavesdropping_Uplink_reward': np.float16(1.232)}, 1: {'Final reward': np.float16(10.96), 'Downlink reward': np.float16(5.19), 'Uplink reward': np.float16(6.152), 'Eavesdropping reward': np.float16(0.3843), 'Eavesdropping_Downlink_reward': np.float16(0.2069), 'Eavesdropping_Uplink_reward': np.float16(0.1774)}}
+ |--> ACTOR LOSS 9.516226768493652, CRITIC LOSS 0.12173515558242798
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:28:57,535 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 29000
+     |--> Training the NN takes 0.0296 sec on average across 28905 steps 
+  |--> LOCAL AVERAGE REWARD 8.328125, MAX INSTANT REWARD REACHED 10.957538467505909
+  |--> LOCAL AVERAGE BASIC REWARD 8.328125, MAXIMUM INSTANT BASIC REWARD: 10.9575
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.000163), 'Uplink reward': np.float16(0.001538), 'Eavesdropping reward': np.float16(1.232), 'Eavesdropping_Downlink_reward': np.float16(0.000533), 'Eavesdropping_Uplink_reward': np.float16(1.232)}, 1: {'Final reward': np.float16(10.96), 'Downlink reward': np.float16(5.19), 'Uplink reward': np.float16(6.152), 'Eavesdropping reward': np.float16(0.3843), 'Eavesdropping_Downlink_reward': np.float16(0.2069), 'Eavesdropping_Uplink_reward': np.float16(0.1774)}}
+ |--> ACTOR LOSS 9.747694969177246, CRITIC LOSS 0.23466002941131592
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:29:18,035 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 29500
+     |--> Training the NN takes 0.0297 sec on average across 29405 steps 
+  |--> LOCAL AVERAGE REWARD 8.28125, MAX INSTANT REWARD REACHED 10.957538467505909
+  |--> LOCAL AVERAGE BASIC REWARD 8.28125, MAXIMUM INSTANT BASIC REWARD: 10.9575
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.000163), 'Uplink reward': np.float16(0.001538), 'Eavesdropping reward': np.float16(1.232), 'Eavesdropping_Downlink_reward': np.float16(0.000533), 'Eavesdropping_Uplink_reward': np.float16(1.232)}, 1: {'Final reward': np.float16(10.96), 'Downlink reward': np.float16(5.19), 'Uplink reward': np.float16(6.152), 'Eavesdropping reward': np.float16(0.3843), 'Eavesdropping_Downlink_reward': np.float16(0.2069), 'Eavesdropping_Uplink_reward': np.float16(0.1774)}}
+ |--> ACTOR LOSS 9.64419937133789, CRITIC LOSS 0.1550571173429489
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:29:38,296 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 30000
+     |--> Training the NN takes 0.0297 sec on average across 29905 steps 
+  |--> LOCAL AVERAGE REWARD 9.0546875, MAX INSTANT REWARD REACHED 11.060760342012278
+  |--> LOCAL AVERAGE BASIC REWARD 9.0546875, MAXIMUM INSTANT BASIC REWARD: 11.0608
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(3.27e-05), 'Uplink reward': np.float16(0.0003228), 'Eavesdropping reward': np.float16(1.171), 'Eavesdropping_Downlink_reward': np.float16(0.000706), 'Eavesdropping_Uplink_reward': np.float16(1.17)}, 1: {'Final reward': np.float16(11.06), 'Downlink reward': np.float16(4.977), 'Uplink reward': np.float16(6.37), 'Eavesdropping reward': np.float16(0.286), 'Eavesdropping_Downlink_reward': np.float16(0.2559), 'Eavesdropping_Uplink_reward': np.float16(0.04593)}}
+ |--> ACTOR LOSS 10.39930248260498, CRITIC LOSS 0.26429614424705505
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:29:59,030 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 30500
+     |--> Training the NN takes 0.0297 sec on average across 30405 steps 
+  |--> LOCAL AVERAGE REWARD 8.5859375, MAX INSTANT REWARD REACHED 11.080562853342032
+  |--> LOCAL AVERAGE BASIC REWARD 8.5859375, MAXIMUM INSTANT BASIC REWARD: 11.0806
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.00010365), 'Uplink reward': np.float16(0.002043), 'Eavesdropping reward': np.float16(1.425), 'Eavesdropping_Downlink_reward': np.float16(0.0003984), 'Eavesdropping_Uplink_reward': np.float16(1.425)}, 1: {'Final reward': np.float16(11.08), 'Downlink reward': np.float16(5.145), 'Uplink reward': np.float16(6.242), 'Eavesdropping reward': np.float16(0.3071), 'Eavesdropping_Downlink_reward': np.float16(0.3032), 'Eavesdropping_Uplink_reward': np.float16(0.04318)}}
+ |--> ACTOR LOSS 10.048635482788086, CRITIC LOSS 0.12334539741277695
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:30:19,663 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 31000
+     |--> Training the NN takes 0.0297 sec on average across 30905 steps 
+  |--> LOCAL AVERAGE REWARD 8.84375, MAX INSTANT REWARD REACHED 11.144085430793542
+  |--> LOCAL AVERAGE BASIC REWARD 8.84375, MAXIMUM INSTANT BASIC REWARD: 11.1441
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(1.02e-05), 'Uplink reward': np.float16(0.000523), 'Eavesdropping reward': np.float16(1.576), 'Eavesdropping_Downlink_reward': np.float16(9.85e-05), 'Eavesdropping_Uplink_reward': np.float16(1.576)}, 1: {'Final reward': np.float16(11.14), 'Downlink reward': np.float16(5.047), 'Uplink reward': np.float16(6.36), 'Eavesdropping reward': np.float16(0.2627), 'Eavesdropping_Downlink_reward': np.float16(0.1755), 'Eavesdropping_Uplink_reward': np.float16(0.2351)}}
+ |--> ACTOR LOSS 9.864699363708496, CRITIC LOSS 0.16434048116207123
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:30:39,766 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 31500
+     |--> Training the NN takes 0.0298 sec on average across 31405 steps 
+  |--> LOCAL AVERAGE REWARD 9.015625, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.015625, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.284836769104004, CRITIC LOSS 0.1784174144268036
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:30:58,673 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 32000
+     |--> Training the NN takes 0.0297 sec on average across 31905 steps 
+  |--> LOCAL AVERAGE REWARD 9.234375, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.234375, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.45559310913086, CRITIC LOSS 0.1593756079673767
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:31:17,841 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 32500
+     |--> Training the NN takes 0.0297 sec on average across 32405 steps 
+  |--> LOCAL AVERAGE REWARD 9.1328125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.1328125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.21557903289795, CRITIC LOSS 0.12669166922569275
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:31:36,647 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 33000
+     |--> Training the NN takes 0.0297 sec on average across 32905 steps 
+  |--> LOCAL AVERAGE REWARD 8.8828125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.8828125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.158417701721191, CRITIC LOSS 0.15285010635852814
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:31:53,525 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 33500
+     |--> Training the NN takes 0.0296 sec on average across 33405 steps 
+  |--> LOCAL AVERAGE REWARD 8.703125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.703125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.968238830566406, CRITIC LOSS 0.10209083557128906
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:32:10,373 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 34000
+     |--> Training the NN takes 0.0295 sec on average across 33905 steps 
+  |--> LOCAL AVERAGE REWARD 8.75, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.75, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.308633804321289, CRITIC LOSS 0.1251133382320404
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:32:26,481 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 34500
+     |--> Training the NN takes 0.0294 sec on average across 34405 steps 
+  |--> LOCAL AVERAGE REWARD 8.8984375, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.8984375, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.265335083007812, CRITIC LOSS 0.0689096450805664
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:32:41,195 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 35000
+     |--> Training the NN takes 0.0293 sec on average across 34905 steps 
+  |--> LOCAL AVERAGE REWARD 9.0234375, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.0234375, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.18683910369873, CRITIC LOSS 0.08772706240415573
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:32:55,454 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 35500
+     |--> Training the NN takes 0.0292 sec on average across 35405 steps 
+  |--> LOCAL AVERAGE REWARD 8.609375, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.609375, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.5761137008667, CRITIC LOSS 0.08630576729774475
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:33:09,654 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 36000
+     |--> Training the NN takes 0.0291 sec on average across 35905 steps 
+  |--> LOCAL AVERAGE REWARD 8.5078125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.5078125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.7191162109375, CRITIC LOSS 0.06079849228262901
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:33:21,901 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 36500
+     |--> Training the NN takes 0.0289 sec on average across 36405 steps 
+  |--> LOCAL AVERAGE REWARD 8.5234375, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.5234375, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.734484672546387, CRITIC LOSS 0.07217369973659515
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:33:32,348 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 37000
+     |--> Training the NN takes 0.0287 sec on average across 36905 steps 
+  |--> LOCAL AVERAGE REWARD 8.5546875, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.5546875, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.759123802185059, CRITIC LOSS 0.0563325509428978
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:33:42,789 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 37500
+     |--> Training the NN takes 0.0285 sec on average across 37405 steps 
+  |--> LOCAL AVERAGE REWARD 8.5546875, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.5546875, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.702594757080078, CRITIC LOSS 0.0665566623210907
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:33:54,112 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 38000
+     |--> Training the NN takes 0.0283 sec on average across 37905 steps 
+  |--> LOCAL AVERAGE REWARD 8.5703125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.5703125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.716346740722656, CRITIC LOSS 0.054834336042404175
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:34:05,980 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 38500
+     |--> Training the NN takes 0.0282 sec on average across 38405 steps 
+  |--> LOCAL AVERAGE REWARD 8.8203125, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.8203125, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.838031768798828, CRITIC LOSS 0.0989052951335907
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:34:17,662 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 39000
+     |--> Training the NN takes 0.0280 sec on average across 38905 steps 
+  |--> LOCAL AVERAGE REWARD 8.8671875, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 8.8671875, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.903764724731445, CRITIC LOSS 0.074355348944664
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:34:28,960 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 39500
+     |--> Training the NN takes 0.0279 sec on average across 39405 steps 
+  |--> LOCAL AVERAGE REWARD 9.015625, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.015625, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 9.981616973876953, CRITIC LOSS 0.06347925961017609
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
+2025-09-28 13:34:40,143 - TrainingLogger - VERBOSE - 
+|--> TRAINING EPISODE 0, STEP 40000
+     |--> Training the NN takes 0.0277 sec on average across 39905 steps 
+  |--> LOCAL AVERAGE REWARD 9.15625, MAX INSTANT REWARD REACHED 11.596278341558936
+  |--> LOCAL AVERAGE BASIC REWARD 9.15625, MAXIMUM INSTANT BASIC REWARD: 11.5963
+  |--> Detailed basic reward for best case: {0: {'Final reward': np.float16(0.0), 'Downlink reward': np.float16(0.0005617), 'Uplink reward': np.float16(0.00459), 'Eavesdropping reward': np.float16(2.035), 'Eavesdropping_Downlink_reward': np.float16(0.0003517), 'Eavesdropping_Uplink_reward': np.float16(2.035)}, 1: {'Final reward': np.float16(11.59), 'Downlink reward': np.float16(5.55), 'Uplink reward': np.float16(6.188), 'Eavesdropping reward': np.float16(0.1409), 'Eavesdropping_Downlink_reward': np.float16(0.1365), 'Eavesdropping_Uplink_reward': np.float16(0.06573)}}
+ |--> ACTOR LOSS 10.151714324951172, CRITIC LOSS 0.0701991617679596
+ |--> USER FAIRNESS FOR THE BEST INSTANT REWARD 0.5, LOCAL USER FAIRNESS 0.5
+ |--> POWER DEPLOYED: 0.10000000149011612 Watts
+---------------------------
+
