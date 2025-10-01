@@ -145,7 +145,7 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # choosing the device
     print(f"Available device is {device}")
     write_line_to_file(logs_terminal_txt_file, f"Available device is {device}")
-
+    empty = None
 
     noise_activated = bool(env_config.get("noise_activated", False))
     if envs.nremotes == 1:

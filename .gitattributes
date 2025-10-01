@@ -18,7 +18,7 @@ requirements*.yml linguist-language=YAML
 # Set README as Markdown
 README.md linguist-language=Markdown
 
-# Ignore large data files from language detection
+# AGGRESSIVELY ignore all data and visualization files
 *.npz linguist-vendored
 *.mp4 linguist-vendored
 *.html linguist-vendored
@@ -26,6 +26,17 @@ README.md linguist-language=Markdown
 *.log linguist-vendored
 *.0 linguist-vendored
 
+# Ignore all files in data directory
+data/** linguist-vendored
+
+# Ignore TensorBoard files
+events.out.tfevents.* linguist-vendored
+
 # Ignore cache directories
 __pycache__/ linguist-vendored
 *.pyc linguist-vendored
+
+# Force specific directories to be ignored
+data/analytics/** linguist-vendored
+data/raw/** linguist-vendored
+data/archived_experiments/** linguist-vendored
