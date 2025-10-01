@@ -244,8 +244,21 @@ git push origin feature/your-feature-name
 
 ## 📚 Citation
 
-If you use FAIR_RIS_AI in your research, please cite our work:
+If you use FAIR_RIS_AI in your research, please cite our work using one of the following formats:
 
+### Software Citation (Recommended)
+```bibtex
+@software{FAIR_RIS_AI_2025,
+  author = {Pierron, Barbeau and De Cicco, Rubio-Hernan and Garcia-Alfaro},
+  title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
+  year = {2025},
+  url = {https://github.com/alex-pierron/FAIR_RIS_AI},
+  version = {1.0.0},
+  license = {GPL-3.0}
+}
+```
+
+### Traditional Academic Citation
 ```bibtex
 @misc{FAIR_RIS_AI_2025,
   author = {Pierron, Barbeau and De Cicco, Rubio-Hernan and Garcia-Alfaro},

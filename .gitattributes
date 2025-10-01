@@ -1,0 +1,31 @@
+# Set Python files as Python
+*.py linguist-language=Python
+
+# Set YAML files as YAML
+*.yaml linguist-language=YAML
+*.yml linguist-language=YAML
+
+# Set Jupyter notebooks as Python
+*.ipynb linguist-language=Python
+
+# Set Dockerfile as Dockerfile
+Dockerfile linguist-language=Dockerfile
+
+# Set requirements files as Python
+requirements*.txt linguist-language=Python
+requirements*.yml linguist-language=YAML
+
+# Set README as Markdown
+README.md linguist-language=Markdown
+
+# Ignore large data files from language detection
+*.npz linguist-vendored
+*.mp4 linguist-vendored
+*.html linguist-vendored
+*.pdf linguist-vendored
+*.log linguist-vendored
+*.0 linguist-vendored
+
+# Ignore cache directories
+__pycache__/ linguist-vendored
+*.pyc linguist-vendored
