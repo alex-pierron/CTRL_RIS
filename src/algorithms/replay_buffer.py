@@ -82,6 +82,20 @@ class ReplayBuffer:
                     reward = [reward]
                     next_state = [next_state]
 
+        # Convert to numpy arrays if needed and ensure correct shapes
+        if not isinstance(state, np.ndarray):
+            state = np.array(state)
+        if not isinstance(action, np.ndarray):
+            action = np.array(action)
+        if not isinstance(reward, np.ndarray):
+            reward = np.array(reward)
+        if not isinstance(next_state, np.ndarray):
+            next_state = np.array(next_state)
+        
+        # Ensure rewards have the correct shape (batch_size, 1)
+        if reward.ndim == 1:
+            reward = reward.reshape(-1, 1)
+        
         # Check if we have enough space in the buffer
         if self.pointer + batch_size <= self.buffer_size:
             # Contiguous space available
@@ -125,6 +139,12 @@ class ReplayBuffer:
         Returns:
             tuple: A tuple containing the sampled states, actions, rewards, and next states.
         """
+        if self.size == 0:
+            raise ValueError("Cannot sample from empty buffer")
+        
+        if batch_size > self.size:
+            raise ValueError(f"Cannot sample {batch_size} experiences from buffer with only {self.size} experiences")
+        
         indices = self.numpy_rng.choice(self.size, size = batch_size)
         return (
             torch.FloatTensor(self.state_buffer[indices]),

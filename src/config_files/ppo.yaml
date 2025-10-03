@@ -36,7 +36,7 @@ Environment:
   user_seed: 84 #seed used specifically for the the placement of the users in case of random locations
 
 Network:
-  algorithm: ppo
+  algorithm: ddpg
   actor_linear_layers: [256,128, 128, 128, 128]
   critic_linear_layers: [128, 128, 128]
   gamma: 0.1

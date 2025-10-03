@@ -10,6 +10,18 @@ import os
 
 class ActorNetwork(nn.Module):
     def __init__(self, state_dim, action_dim, N_t, K, P_max, actor_linear_layers = [128,128,128]):
+        # Validate parameters
+        if action_dim <= 0:
+            raise ValueError(f"action_dim must be positive, got {action_dim}")
+        if state_dim <= 0:
+            raise ValueError(f"state_dim must be positive, got {state_dim}")
+        if N_t <= 0:
+            raise ValueError(f"N_t must be positive, got {N_t}")
+        if K <= 0:
+            raise ValueError(f"K must be positive, got {K}")
+        if P_max <= 0:
+            raise ValueError(f"P_max must be positive, got {P_max}")
+            
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
@@ -27,6 +39,7 @@ class ActorNetwork(nn.Module):
         # Output layer
         self.output = nn.Linear(actor_linear_layers[-1], action_dim)
         self.batch_norm = nn.BatchNorm1d(action_dim)
+
 
 
     def actor_W_projection_operator(self, raw_W):
@@ -555,7 +568,7 @@ class DDPG:
         torch.save(self.actor.state_dict(), actor_path)
         torch.save(self.critic.state_dict(), critic_path)
         torch.save(self.target_actor.state_dict(), target_actor_path)
-        torch.save(self.target_actor.state_dict(), target_critic_path)
+        torch.save(self.target_critic.state_dict(), target_critic_path)
 
 
 
@@ -601,7 +614,7 @@ class Custom_DDPG:
                  action_noise_scale:float  = 0,
                  using_loss_scaling: bool = False,
                  # PER parameters
-                 use_per: bool = True,
+                 use_per: bool = False,
                  per_alpha: float = 0.6,
                  per_beta_start: float = 0.4,
                  per_beta_frames: int = 100000,
