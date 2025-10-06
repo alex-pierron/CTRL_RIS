@@ -1,1 +1,8 @@
-/tests
+
+# Python/IDE files
+__pycache__/
+*.pyc
+tests/
+# Ignore data directories
+data/raw
+data/hyperion

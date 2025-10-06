@@ -246,8 +246,6 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     # Noise term
     sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
     
-    #return np.squeeze(inter_user_interference_term + user_interference_term + sigma_noise_term)
-    
     return np.squeeze(inter_user_interference_term + distortion_term + user_interference_term + sigma_noise_term)
 
 
