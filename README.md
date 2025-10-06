@@ -249,7 +249,7 @@ If you use FAIR_RIS_AI in your research, please cite our work using one of the f
 ### Software Citation (Recommended)
 ```bibtex
 @software{FAIR_RIS_AI_2025,
-  author = {Pierron, Barbeau and De Cicco, Rubio-Hernan and Garcia-Alfaro},
+  author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
   title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
   year = {2025},
   url = {https://github.com/alex-pierron/FAIR_RIS_AI},
@@ -261,7 +261,7 @@ If you use FAIR_RIS_AI in your research, please cite our work using one of the f
 ### Traditional Academic Citation
 ```bibtex
 @misc{FAIR_RIS_AI_2025,
-  author = {Pierron, Barbeau and De Cicco, Rubio-Hernan and Garcia-Alfaro},
+  author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
   title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
   year = {2025},
   howpublished = {\url{https://github.com/alex-pierron/FAIR_RIS_AI}},
