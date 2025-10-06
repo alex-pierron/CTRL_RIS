@@ -1,4 +1,4 @@
-from .basic_reward import compute_basic_reward
+from .baseline_reward import compute_basic_reward
 from .jain_fairness import jain_fairness_index, user_jain_fairness
 from .minmax_reward import compute_minmax_reward
 from.qos_reward import compute_qos_reward

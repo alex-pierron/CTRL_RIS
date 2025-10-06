@@ -46,7 +46,6 @@ class RIS_Duplex(gym.Env):
         P_max (float): Maximum transmit power at the base station in Watts.
         P_users (np.ndarray): Maximum transmit power for each user in Watts.
         lambda_h (float): Wavelength parameter for the environment.
-        alpha (float): Path loss fading coefficient.
         d_h (np.ndarray): Inter-element spacing in the ULAs.
         rician_factor (float): Rician factor for the environment.
         sigma_k_squared (float): Noise power density for the downlink signal in Watts for the users.
@@ -121,7 +120,6 @@ class RIS_Duplex(gym.Env):
         self.P_max = dbm_to_watts(self.env_config['BS_max_power'])
         self.P_users = np.ones(self.K) * self.env_config.get('user_transmit_power', 100) * 1e-3  # in W
         self._lambda_h = self.env_config.get('lambda_h', 0.1) # in meter
-        self.alpha = self.env_config.get('alpha', 2)
         self._d_h = self.env_config.get('d_h', self._lambda_h / 2) * np.ones(4) # in meter
         self.los_only = self.env_config.get('los_only', False) 
         self.rician_factor = self.env_config.get('rician_factor', 10)
@@ -192,7 +190,7 @@ class RIS_Duplex(gym.Env):
         self.qos_p = self.env_config.get('qos_p', 2)
         self.print_info = self.env_config.get('print_info_env', False)
 
-        if "basic_reward" not in self.informative_reward_functions or self.decisive_reward_functions:
+        if "baseline_reward" not in self.informative_reward_functions or self.decisive_reward_functions:
             self.compute_extra_basic_reward = True
         else:
             self.compute_extra_basic_reward = False
@@ -583,7 +581,6 @@ class RIS_Duplex(gym.Env):
             receiver_position=self._RIS_position,
             W_h_t=self.N_t, W_h_r=self._M,
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
-            alpha=self.alpha,
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
@@ -597,7 +594,7 @@ class RIS_Duplex(gym.Env):
             receiver_position=self._RIS_position,
             W_h_t=self.N_t, W_h_r=self._M,
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
-            alpha=self.alpha,
+            
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self_second_np_rng ,bjornson = True,
@@ -610,7 +607,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.test_point_for_BS,
                 W_h_t=self.N_t, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self_second_np_rng, nlos_only = True ,bjornson = True,
@@ -622,7 +618,6 @@ class RIS_Duplex(gym.Env):
             receiver_position=self._BS_position,
             W_h_t=self._M, W_h_r=self.N_r,
             d_h_tx=self._d_h[1], d_h_rx=self._d_h[0],
-            alpha=self.alpha,
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
@@ -703,7 +698,6 @@ class RIS_Duplex(gym.Env):
                     receiver_position=self.test_point_for_user,
                     W_h_t=self._M, W_h_r=1,
                     d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                    alpha=self.alpha,
                     lambda_h=self._lambda_h,
                     epsilon_h=self.rician_factor,
                     numpy_generator=self.numpy_rng, bjornson = self.bjornson,
@@ -716,7 +710,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.users_positions[k],
                 W_h_t=self.N_t, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng,bjornson = self.bjornson,los_only = self.los_only,
@@ -730,7 +723,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.users_positions[k],
                 W_h_t=self._M, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -744,7 +736,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.eavesdroppers_positions[l],
                 W_h_t=self._M, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -759,7 +750,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self._RIS_position,
                 W_h_t=1, W_h_r=self._M,
                 d_h_tx=self._d_h[2], d_h_rx=self._d_h[1],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -773,7 +763,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.eavesdroppers_positions[l],
                 W_h_t=self._M, W_h_r=1, 
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3], 
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -790,7 +779,6 @@ class RIS_Duplex(gym.Env):
                                                                 receiver_position = self.eavesdroppers_positions[l],
                                                                 W_h_t = self._M, W_h_r = 1,
                                                                 d_h_tx = self._d_h[1], d_h_rx = self._d_h[3],
-                                                                alpha = self.alpha,
                                                                 lambda_h = self._lambda_h,
                                                                 epsilon_h = self.rician_factor,bjornson = self.bjornson,los_only = self.los_only,
                                                                 numpy_generator = self.numpy_rng) ) 
@@ -802,7 +790,7 @@ class RIS_Duplex(gym.Env):
             H_RIS_Eaves_uplink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
                                                               receiver_position = self.eavesdroppers_positions[l],
                                                               W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
-                                                              d_h_rx = self._d_h[3], alpha = self.alpha,
+                                                              d_h_rx = self._d_h[3],
                                                               lambda_h =  self._lambda_h,
                                                               epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
                                                               numpy_generator = self.numpy_rng ) ) 
