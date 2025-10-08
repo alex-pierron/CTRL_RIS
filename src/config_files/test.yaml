@@ -42,7 +42,7 @@ Environment:
     - [110, 80]  
     - [150, 45] #180, 71  111, 18 171,18
   eaves_position_changing: true
-  decisive_reward_functions: ["basic_reward"] #["fqos_reward_bis"]
+  decisive_reward_functions: ["baseline_reward"] #["fqos_reward_bis"]
   informative_reward_functions: []
   R_min_k : 1.1
   downlink_capacity_reward_threshold: 2.5
@@ -81,7 +81,7 @@ Training_parameters:
   frequency_information: 1000
   network_save_checkpoint_frequency: 1000
   Curriculum_Learning: true
-  n_rollout_threads: 2
+  n_rollout_threads: 1
   n_training_threads: 1
   conduct_evaluation: false
   batch_instead_of_buff: true

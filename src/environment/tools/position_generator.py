@@ -24,7 +24,8 @@ class PositionGenerator:
                  RIS_position,
                  numpy_generator, 
                  num_eavesdroppers : int = 0,
-                 angle_difference_between_user = 10):
+                 angle_difference_between_user = 10,
+                 min_distance : float = 0.0):
         """
         Constructs all the necessary attributes for the PositionGenerator object.
 
@@ -44,6 +45,7 @@ class PositionGenerator:
         self.angle_difference_between_user = angle_difference_between_user
         self.angle_is_max = False
         self.fully_random_positioning = False
+        self.min_distance = min_distance
 
         self.min_angle = -np.arctan((self.RIS_position[1]-self.grid_limits[1][1])/(self.grid_limits[0][1]-self.RIS_position[0]))
 
@@ -118,10 +120,26 @@ class PositionGenerator:
             # Symmetric sampling around -π/2
             angles = self._generate_angles_symmetric()
         
-        # Generate coordinates for all users
+        # Generate coordinates for all users with minimum distance constraint
         for i, angle in enumerate(angles):
             angle = np.round(angle, 2)  # Round angle to 0.01
-            user_coordinates[i] = self._generate_position_at_angle(angle)
+            position = self._generate_position_at_angle(angle)
+            
+            # Ensure minimum distance from previously generated positions
+            attempts = 0
+            max_attempts = 1000
+            while attempts < max_attempts:
+                if i == 0 or self._check_minimum_distance(position, user_coordinates[:i]):
+                    user_coordinates[i] = position
+                    break
+                else:
+                    # Generate new position at the same angle
+                    position = self._generate_position_at_angle(angle)
+                    attempts += 1
+            
+            if attempts >= max_attempts:
+                # Fallback: use the last generated position
+                user_coordinates[i] = position
         
         # Shuffle positions and return
         user_positions = self.numpy_generator.permutation(user_coordinates)
@@ -142,7 +160,7 @@ class PositionGenerator:
                 # Last user: sample up to 0
                 angle = self.numpy_generator.uniform(
                     low=angles[-1] + self.angle_difference_between_user,
-                    high= self.min_angle
+                    high=max(angles[-1] + self.angle_difference_between_user, self.min_angle)
                 )
             else:
                 # Middle users: progressive sampling
@@ -169,7 +187,7 @@ class PositionGenerator:
                 # Last user: sample down to -π/2
                 angle = self.numpy_generator.uniform(
                     low=self.max_angle,
-                    high=angles[-1] - self.angle_difference_between_user
+                    high=min(self.max_angle, angles[-1] - self.angle_difference_between_user)
                 )
             else:
                 # Middle users: progressive sampling
@@ -325,6 +343,13 @@ class PositionGenerator:
                     (min_dist_sq_per_candidate <= max_dist_sq)
                 )
                 
+                # Additional check for minimum distance between eavesdroppers
+                if i > 0:
+                    eavesdropper_dist_sq = np.sum((candidates[:, np.newaxis] - eavesdropper_positions[:i]) ** 2, axis=2)
+                    min_eavesdropper_dist_sq = self.min_distance ** 2
+                    eavesdropper_valid_mask = np.all(eavesdropper_dist_sq >= min_eavesdropper_dist_sq, axis=1)
+                    valid_mask = valid_mask & eavesdropper_valid_mask
+                
                 if np.any(valid_mask):
                     # Take first valid candidate
                     valid_idx = np.argmax(valid_mask)
@@ -414,47 +439,100 @@ class PositionGenerator:
             - users_position: A list of self.num_users tuples, each representing the (x, y) coordinates of a user's position.
         """
         def generate_unique_positions(count, existing_positions):
-            positions = set()
-            while len(positions) < count:
+            positions = []
+            attempts = 0
+            max_attempts = 10000
+            
+            while len(positions) < count and attempts < max_attempts:
                 position = self.random_point_in_area()
-                if position not in existing_positions and position not in positions:
-                    positions.add(position)
-            return list(positions)
+                position_array = np.array(position)
+                
+                # Check minimum distance from existing positions
+                if len(positions) == 0 or self._check_minimum_distance(position_array, np.array(positions)):
+                    positions.append(position)
+                
+                attempts += 1
+            
+            if len(positions) < count:
+                # Fallback: generate remaining positions without distance constraint
+                while len(positions) < count:
+                    position = self.random_point_in_area()
+                    if position not in existing_positions and position not in positions:
+                        positions.append(position)
+            
+            return positions
 
         # Generate random positions for self.num_users users
         users_position = np.array(generate_unique_positions(self.num_users, set()))
 
         return users_position
 
-    def generate_random_eavesdroppers_positions(self):
+    def generate_random_eavesdroppers_positions(self, existing_positions=None):
         """
         Generates random positions for self.num_eavesdroppers users within their respective limits.
 
         Parameters
         ----------
-        self.num_eavesdroppers : int
-            The number of eavesdroppers for which to generate random positions.
+        existing_positions : np.ndarray, optional
+            Array of shape (n, 2) containing existing positions to avoid.
         
         Returns
         -------
-        tuple
-            A tuple containing two lists:
-            - eavesdroppers_position: A list of self.num_eavesdroppers tuples, each representing the (x, y) coordinates of an eavesdropper's position.
+        np.ndarray
+            Array of shape (self.num_eavesdroppers, 2) containing eavesdropper positions.
         """
+        if existing_positions is None:
+            existing_positions = np.empty((0, 2))
+        
         def generate_unique_positions(count, existing_positions):
-            positions = set()
-            while len(positions) < count:
+            positions = []
+            attempts = 0
+            max_attempts = 10000
+            
+            while len(positions) < count and attempts < max_attempts:
                 position = self.random_point_in_area()
-                if position not in existing_positions and position not in positions:
-                    positions.add(position)
-            return list(positions)
+                position_array = np.array(position)
+                
+                # Check minimum distance from existing positions and previously generated positions
+                all_existing = np.vstack([existing_positions, np.array(positions)]) if len(positions) > 0 else existing_positions
+                
+                if len(all_existing) == 0 or self._check_minimum_distance(position_array, all_existing):
+                    positions.append(position)
+                
+                attempts += 1
+            
+            if len(positions) < count:
+                # Fallback: generate remaining positions without distance constraint
+                while len(positions) < count:
+                    position = self.random_point_in_area()
+                    if position not in [tuple(p) for p in existing_positions] and position not in positions:
+                        positions.append(position)
+            
+            return positions
 
         # Generate random positions for self.num_eavesdroppers eavesdroppers
-        eavesdroppers_positions = np.array(generate_unique_positions(self.num_eavesdroppers, set()))
+        eavesdroppers_positions = np.array(generate_unique_positions(self.num_eavesdroppers, existing_positions))
 
         return eavesdroppers_positions
 
-
-
-
-
+    def _check_minimum_distance(self, position, existing_positions):
+        """
+        Check if a position maintains minimum distance from existing positions.
+        
+        Parameters
+        ----------
+        position : np.ndarray
+            Position to check (shape: (2,))
+        existing_positions : np.ndarray
+            Array of existing positions (shape: (n, 2))
+        
+        Returns
+        -------
+        bool
+            True if position maintains minimum distance, False otherwise
+        """
+        if len(existing_positions) == 0:
+            return True
+        
+        distances = np.sqrt(np.sum((existing_positions - position) ** 2, axis=1))
+        return np.all(distances >= self.min_distance)
