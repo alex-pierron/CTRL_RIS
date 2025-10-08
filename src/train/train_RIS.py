@@ -49,7 +49,7 @@ def main(args):
     env_name = env_config.get("Environment name", "RIS_Duplex")
     algorithm_name = network_config.get("algorithm", "ddpg")
     experiment_name = f"env_seed{env_seed}_{timestamp}"
-
+    n_rollout_train = training_config.get("n_rollout_threads", 1)
     if debbuging:
         log_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) +"/data" + "/debugging") / algorithm_name / experiment_name
         if not log_dir.exists():
@@ -192,15 +192,16 @@ def main(args):
         network = PPO(state_dim = train_envs.state_dim, action_dim = train_envs.action_dim,gamma = network_config["gamma"],
                               N_t = train_envs.BS_transmit_antennas, K = train_envs.num_users, 
                               P_max = train_envs.users_max_power,
+                              n_rollout_envs = n_rollout_train,
                               actor_linear_layers = network_config.get("actor_linear_layers",[128,128,128]),
                               critic_linear_layers = network_config.get("critic_linear_layers",[128,128]),
                               device = device,
                               optimizer = network_config.get("optimizer","adam"),
                               actor_lr = network_config["actor_lr"], critic_lr = network_config["critic_lr"],
-                              rollout_size= network_config.get("rollout_size",256),clip_range= network_config.get("clip_range",0.01),
+                              rollout_size= n_rollout_train * network_config.get("rollout_size",256),clip_range= network_config.get("clip_range",0.01),
                               ppo_epochs = network_config.get("ppo_epochs",5), minibatch_size = network_config.get("batch_size",16),
                               )
-        
+    # n_rollout_train * 
     # * Recording information of the configuration file and printing it in the console
 
     write_line_to_file(logs_terminal_txt_file, f" \n Timestamp is {timestamp} \n")

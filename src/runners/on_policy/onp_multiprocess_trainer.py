@@ -111,11 +111,12 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
     env_config = training_envs.env_config
 
+    n_rollout_envs = training_envs.nenvs
+    
     # Extract training configuration parameters
     debugging = training_config.get("debugging", False)
     num_episode = training_config.get("number_episodes", 15)
     max_num_step_per_episode = training_config.get("max_steps_per_episode", 20000)
-    batch_size = training_config.get("batch_size", 128)
     frequency_information = training_config.get("frequency_information", 500)
     conduct_eval = eval_env is not None
     episode_per_eval = training_config.get("episode_per_eval_env", 1) if conduct_eval else None
@@ -125,11 +126,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
     num_users = env_config
     saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
+
+    ppo_epochs = network.ppo_epochs
     n_eval_rollout_threads = training_config.get("n_eval_rollout_threads", 2)
     
     # NOTE: For PPO, we use rollout buffer instead of replay buffer
     rollout_size = getattr(network.rollout, 'buffer_size', training_config.get('rollout_size', 2048))
-    buffer_size = rollout_size  # Use rollout size for compatibility with existing code
+    buffer_size = rollout_size * n_rollout_envs # Use rollout size for compatibility with existing code
     
     decisive_reward_functions = env_config.get("decisive_reward_functions", ["basic_reward"])
     informative_reward_functions = env_config.get("informative_reward_functions", [])
@@ -139,7 +142,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     decisive_rewards_average_episode = {function_name: np.zeros(num_episode) for function_name in decisive_reward_functions}
     informative_rewards_average_episode = {function_name: np.zeros(num_episode) for function_name in informative_reward_functions}
 
-    n_rollout_envs = training_envs.nenvs
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
 
@@ -180,10 +182,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     
     if buffer_number_of_required_episode == 0:
         buffer_number_of_required_episode = 1
-    
-    # NOTE: Progress bar for initial rollout buffer warmup
-    filling_buffer_progress_bar = tqdm(total=buffer_number_of_required_episode, desc="FILLING ROLLOUT BUFFER", position=0, ascii="->#", leave=True) if not batch_instead_of_buff else None
-    
 
     # === Main training loop over episodes ===
     for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
@@ -269,9 +267,12 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             # NOTE: Store transitions for all envs in PPO rollout buffer
             for i in range(n_rollout_envs):
                 done = bool(training_envs.is_done()) if hasattr(training_envs, 'is_done') else False
-                network.store_transition(states[i], selected_actions[i], raw_actions[i], 
+                success = network.store_transition(states[i], selected_actions[i], raw_actions[i], 
                                        float(rewards[i]), next_states[i], done=done, 
-                                       logprob=logprobs[i])
+                                       logprob=logprobs[i], env_id = i)
+                if not success:
+                    # Buffer is full, break out of the loop
+                    break
 
             # Update max reward in a single operation
             current_fairness = np.round(training_envs.get_jain_fairness(), decimals=4).squeeze()
@@ -291,17 +292,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 training_time_1 = time.time()
                 actor_loss, critic_loss, mean_reward = network.training()
                 step_time_list.append(time.time() - training_time_1)
-                optim_steps += 1
+                optim_steps += ppo_epochs
                 
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
                 
                 # Reset rollout buffer after training
-                try:
-                    network.rollout.reset()
-                except Exception:
-                    if hasattr(network.rollout, 'ptr'):
-                        network.rollout.ptr = 0
+                network.rollout.reset()
                 # NOTE: Periodic logging of buffer stats, losses, and fairness
                 if (current_step + 1) % frequency_information == 0 and (num_step +1) % frequency_information == 0:
 
@@ -356,22 +353,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     
                     logger.verbose(message)
 
-        #TODO: optimize this code snippet: Correctly handling the number management of the rollout buffer loading bar for the tqdm.
-        if batch_instead_of_buff:
-            pass
-        elif buffer_filled or buffer_bar_finished:
-            if buffer_smaller_than_one_episode:
-                filling_buffer_progress_bar.update(1)
-                if filling_buffer_progress_bar.n == buffer_number_of_required_episode:
-                    buffer_bar_finished = True
-            elif length_episode_rb_matching and filling_buffer_progress_bar.n == buffer_number_of_required_episode - 1:
-                filling_buffer_progress_bar.update(1)
-                buffer_bar_finished = True
-        else:
-            if not buffer_filled and not batch_instead_of_buff:
-                filling_buffer_progress_bar.update(1)
-                if filling_buffer_progress_bar.n == buffer_number_of_required_episode:
-                    buffer_bar_finished = True
 
         if curriculum_learning:
                 if using_eavesdropper:

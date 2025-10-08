@@ -10,16 +10,18 @@ from torch.distributions import Normal
 
 class RolloutBuffer:
     """
-    On-policy rollout storage for PPO with GAE-Lambda.
-    Stores: states, actions, rewards, dones, values, logprobs.
+    On-policy rollout storage for PPO with GAE-Lambda for parallel environments.
+    Stores: states, actions, rewards, dones, values, logprobs, env_ids.
     Unlike off-policy buffers (ReplayBuffer), this stores trajectories sequentially
     and computes advantages using Generalized Advantage Estimation (GAE).
+    Handles multiple parallel environments by tracking which environment each transition belongs to.
     """
-    def __init__(self, buffer_size: int, state_dim: int, action_dim: int, device: torch.device):
+    def __init__(self, buffer_size: int, state_dim: int, action_dim: int, device: torch.device, n_rollout_envs: int = 1):
         self.buffer_size = buffer_size
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
+        self.n_rollout_envs = n_rollout_envs
         self.reset()
 
     def reset(self):
@@ -32,16 +34,18 @@ class RolloutBuffer:
         self.dones = torch.zeros((self.buffer_size, 1), dtype=torch.float32, device=self.device)
         self.values = torch.zeros((self.buffer_size, 1), dtype=torch.float32, device=self.device)
         self.logprobs = torch.zeros((self.buffer_size, 1), dtype=torch.float32, device=self.device)
+        # ADDED: Track which environment each transition belongs to
+        self.env_ids = torch.zeros((self.buffer_size, 1), dtype=torch.long, device=self.device)
         self.ptr = 0
 
-    # CHANGED: Added raw_action to the signature
-    def add(self, state, action, raw_action, reward, done, value, logprob):
+    # CHANGED: Added raw_action and env_id to the signature
+    def add(self, state, action, raw_action, reward, done, value, logprob, env_id=0):
         """
         Add a single transition to the buffer.
         """
+        # Check if buffer is full
         if self.ptr >= self.buffer_size:
-            print(f"Warning: RolloutBuffer overflow at step {self.ptr}. Resetting buffer.")
-            self.reset()
+            return False
             
         idx = self.ptr
         self.states[idx] = state
@@ -52,26 +56,50 @@ class RolloutBuffer:
         self.dones[idx] = done
         self.values[idx] = value
         self.logprobs[idx] = logprob
+        # ADDED: Store environment ID
+        self.env_ids[idx] = env_id
         self.ptr += 1
+        return True
 
-    def compute_advantages(self, last_value: torch.Tensor, gamma: float, gae_lambda: float):
+    def compute_advantages(self, last_values: torch.Tensor, gamma: float, gae_lambda: float):
         """
-        Compute advantages and returns using Generalized Advantage Estimation (GAE).
+        Compute advantages and returns using Generalized Advantage Estimation (GAE) for parallel environments.
+        
+        Args:
+            last_values: Tensor of shape (n_rollout_envs, 1) containing the last value estimates for each environment
         """
         advantages = torch.zeros_like(self.rewards, device=self.device)
-        last_gae = 0.0
         
-        for step in reversed(range(self.ptr)):
-            if step == self.ptr - 1:
-                next_non_terminal = 1.0 - self.dones[step]
-                next_value = last_value
-            else:
-                next_non_terminal = 1.0 - self.dones[step + 1]
-                next_value = self.values[step + 1]
+        # Process each environment separately to handle different episode lengths
+        for env_id in range(self.n_rollout_envs):
+            # Get indices for this environment
+            env_mask = (self.env_ids[:self.ptr].squeeze() == env_id)
+            env_indices = torch.where(env_mask)[0]
+            
+            if len(env_indices) == 0:
+                continue
                 
-            delta = self.rewards[step] + gamma * next_value * next_non_terminal - self.values[step]
-            last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae
-            advantages[step] = last_gae
+            # Get the last value for this environment
+            last_value = last_values[env_id] if last_values.dim() > 0 else last_values
+            
+            # Compute advantages for this environment's trajectory
+            last_gae = 0.0
+            for i in reversed(range(len(env_indices))):
+                step_idx = env_indices[i]
+                
+                if i == len(env_indices) - 1:
+                    # Last step of this environment's trajectory
+                    next_non_terminal = 1.0 - self.dones[step_idx]
+                    next_value = last_value
+                else:
+                    # Not the last step
+                    next_step_idx = env_indices[i + 1]
+                    next_non_terminal = 1.0 - self.dones[step_idx]
+                    next_value = self.values[next_step_idx]
+                
+                delta = self.rewards[step_idx] + gamma * next_value * next_non_terminal - self.values[step_idx]
+                last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae
+                advantages[step_idx] = last_gae
         
         # CHANGED: Returns are now computed correctly from advantages and values
         self.returns = advantages + self.values
@@ -85,6 +113,7 @@ class RolloutBuffer:
         self.values = self.values[:self.ptr]
         self.returns = self.returns[:self.ptr]
         self.advantages = self.advantages[:self.ptr]
+        self.env_ids = self.env_ids[:self.ptr] # ADDED
 
     def get_minibatches(self, minibatch_size: int):
         """
@@ -104,6 +133,7 @@ class RolloutBuffer:
                 self.advantages[mb_idx],
                 self.returns[mb_idx],
                 self.values[mb_idx],
+                self.env_ids[mb_idx], # ADDED env_ids to the minibatch
             )
 
 
@@ -300,6 +330,7 @@ class PPO:
     Proximal Policy Optimization (PPO-Clip) implementation.
     """
     def __init__(self, state_dim, action_dim, N_t, K, P_max,
+                 n_rollout_envs:int, 
                  actor_model=ActorNetwork, critic_model=CriticNetwork,
                  actor_linear_layers=[128, 128, 128], critic_linear_layers=[128, 128],
                  device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
@@ -326,7 +357,7 @@ class PPO:
         self.ppo_epochs = ppo_epochs
         self.minibatch_size = minibatch_size
         self.device = device
-        
+        self.n_rollout_envs = n_rollout_envs
         torch.manual_seed(seed)
         np.random.seed(seed)
 
@@ -338,9 +369,9 @@ class PPO:
         self.critic_optimizer = opt_cls(self.critic.parameters(), lr=critic_lr)
 
         self.using_loss_scaling = using_loss_scaling and (self.device.type == 'cuda')
-        self.scaler = torch.cuda.amp.GradScaler() if self.using_loss_scaling else None
+        self.scaler = torch.GradScaler() if self.using_loss_scaling else None
 
-        self.rollout = RolloutBuffer(rollout_size, state_dim, action_dim, self.device)
+        self.rollout = RolloutBuffer(rollout_size, state_dim, action_dim, self.device, n_rollout_envs)
         self.total_it = 0
 
     # CHANGED: Now returns raw_action as well
@@ -356,8 +387,8 @@ class PPO:
                 
         return action.squeeze(0).cpu(), logprob.squeeze(0), raw_action.squeeze(0)
 
-    # CHANGED: Modified to store raw_action
-    def store_transition(self, state, action, raw_action, reward, next_state, done=False, logprob=None, value=None):
+    # CHANGED: Modified to store raw_action and env_id
+    def store_transition(self, state, action, raw_action, reward, next_state, done=False, logprob=None, value=None, env_id=0):
         """
         Store transition in rollout buffer.
         """
@@ -383,7 +414,7 @@ class PPO:
             
         self.rollout.add(state_t, action_t, raw_action_t, reward_t, done_t, 
                         value.detach().unsqueeze(-1) if value.dim() == 0 else value.detach(), 
-                        logprob_t)
+                        logprob_t, env_id)
 
     def training(self, batch_size=None):
         """
@@ -397,16 +428,29 @@ class PPO:
         self.total_it += 1
 
         with torch.no_grad():
-            last_state = self.rollout.states[-1].unsqueeze(0)
-            last_value = self.critic(last_state).squeeze(0)
+            # Get last states for each environment to compute last values
+            last_states = []
+            for env_id in range(self.n_rollout_envs):
+                # Find the last state for this environment
+                env_mask = (self.rollout.env_ids[:self.rollout.ptr].squeeze() == env_id)
+                env_indices = torch.where(env_mask)[0]
+                if len(env_indices) > 0:
+                    last_state_idx = env_indices[-1]
+                    last_states.append(self.rollout.states[last_state_idx])
+                else:
+                    # If no transitions for this environment, use zeros
+                    last_states.append(torch.zeros(self.state_dim, device=self.device))
+            
+            last_states = torch.stack(last_states)  # Shape: (n_rollout_envs, state_dim)
+            last_values = self.critic(last_states)  # Shape: (n_rollout_envs, 1)
 
-        self.rollout.compute_advantages(last_value=last_value, gamma=self.gamma, gae_lambda=self.gae_lambda)
+        self.rollout.compute_advantages(last_values=last_values, gamma=self.gamma, gae_lambda=self.gae_lambda)
         
         actor_losses, critic_losses = [], []
         mean_reward = self.rollout.rewards.mean().item()
 
-        for epoch in range(self.ppo_epochs):
-            for (states, actions, raw_actions, old_logprobs, advantages, returns, old_values) in self.rollout.get_minibatches(self.minibatch_size):
+        for _ in range(self.ppo_epochs):
+            for (states, actions, raw_actions, old_logprobs, advantages, returns, old_values, env_ids) in self.rollout.get_minibatches(self.minibatch_size):
                 
                 # CHANGED: Advantage normalization per minibatch for stability
                 advs = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -418,22 +462,24 @@ class PPO:
                 
                 surr1 = ratio * advs
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * advs
-                actor_loss = -torch.min(surr1, surr2).mean()
-                
+              
                 entropy_loss = -entropy.mean()
-
+                actor_loss = -torch.min(surr1, surr2).mean() + self.entropy_coef * entropy_loss
                 # --- Value (Critic) Loss ---
                 values = self.critic(states)
                 critic_loss = F.mse_loss(values, returns)
                 
-                # --- Total Loss and Update ---
-                total_loss = (actor_loss + self.entropy_coef * entropy_loss + self.value_coef * critic_loss)
-
+                # --- Separate Updates ---
+                # Actor update
                 self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
-                total_loss.backward()
-                nn.utils.clip_grad_norm_(list(self.actor.parameters()) + list(self.critic.parameters()), self.max_grad_norm)
+                actor_loss.backward()
+                nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
                 self.actor_optimizer.step()
+
+                # Critic update
+                self.critic_optimizer.zero_grad()
+                critic_loss.backward()
+                nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
                 self.critic_optimizer.step()
 
                 actor_losses.append(actor_loss.item())
