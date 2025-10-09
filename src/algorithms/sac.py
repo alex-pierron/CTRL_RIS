@@ -440,6 +440,7 @@ class SAC:
 
         # Update Critics
         if self.total_it % self.critic_frequency_update == 0:
+            updated_critic = True
             with torch.no_grad():
                 next_actions, next_log_probs, _ = self.actor.sample(next_state)
                 target_q1 = self.target_critic1(next_state, next_actions)
@@ -469,6 +470,7 @@ class SAC:
                 self.scaler.step(self.critic2_optimizer)
                 self.scaler.update()
             else:
+
                 q1_values = self.critic1(state, actions)
                 q2_values = self.critic2(state, actions)
                 
@@ -496,6 +498,7 @@ class SAC:
 
             update_target_critics = True
         else:
+            updated_critic = False
             with torch.no_grad():
                 q1_values = self.critic1(state, actions)
                 q2_values = self.critic2(state, actions)
@@ -505,6 +508,7 @@ class SAC:
 
         # Update Actor
         if self.total_it % self.actor_frequency_update == 0:
+            updated_actor = True
             new_actions, log_probs, _ = self.actor.sample(state)
             q1_new = self.critic1(state, new_actions)
             q2_new = self.critic2(state, new_actions)
@@ -535,6 +539,7 @@ class SAC:
 
             self.update_target_networks(update_target_critics)
         else:
+            updated_actor = False
             with torch.no_grad():
                 new_actions, log_probs, _ = self.actor.sample(state)
                 q1_new = self.critic1(state, new_actions)
@@ -557,7 +562,7 @@ class SAC:
             actor_loss = actor_loss.to('cpu')
             critic1_loss = critic1_loss.to('cpu')
 
-        return (actor_loss, critic1_loss, rewards)
+        return (actor_loss, critic1_loss, rewards, updated_actor, updated_critic)
 
     def update_target_networks(self, update_target_critics=True):
         """

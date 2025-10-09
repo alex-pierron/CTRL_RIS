@@ -153,6 +153,9 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     if not using_eavesdropper:
         eavesdroppers_positions = None
     
+    optim_steps_actor = 0
+    optim_steps_critic = 0
+
 
     average_reward_per_env = np.zeros((num_episode, n_rollout_envs))
     average_best_reward_per_env = np.zeros((num_episode, n_rollout_envs))
@@ -174,6 +177,9 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     # === Main training loop over episodes ===
     for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
         
+        optim_steps_actor_ep = 0
+        optim_steps_critic_ep = 0
+
         if curriculum_learning:
             difficulty_config = Task_Manager.generate_episode_configs()
             # print(difficulty_config)
@@ -265,10 +271,16 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     buffer_filled = True
 
                 training_time_1 = time.time()
-                actor_loss, critic_loss, rewards = network.training(batch_size=batch_size)
-                step_time_list.append(time.time() - training_time_1)
-                optim_steps += 1
-                
+                actor_loss, critic_loss, _, updated_actor, updated_critic = network.training(batch_size=batch_size)
+                training_time_2 = time.time()
+
+                if updated_actor:
+                    optim_steps_actor_ep +=1 
+                    step_time_list.append(training_time_2 - training_time_1)
+
+                if updated_critic:
+                    optim_steps_critic_ep +=1 
+
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
                 # NOTE: Periodic logging of buffer stats, losses, and fairness
@@ -276,8 +288,8 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     
                     writer.add_scalar("Replay Buffer/Average reward stored", np.mean(network.replay_buffer.reward_buffer), current_step)
 
-                    current_avg_actor_loss = avg_actor_loss / num_step
-                    current_avg_critic_loss = avg_critic_loss / num_step
+                    current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
+                    current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
                     writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                     writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
 
@@ -309,7 +321,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                         f"\n"
                         f"================================================================================\n"
                         f" TRAINING EPISODE {episode - index_episode_buffer_filled} | STEP {num_step + 1} \n"
-                        f" Training the NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
+                        f" Training the Actor NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
                         f"================================================================================\n"
                         f"| ~ POSITIONING: Positions of UEs: {user_positions}\n"
                         f"|--------------------------------------------------------------------------------|\n"
@@ -326,6 +338,9 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                         f"================================================================================\n")
                     
                     logger.verbose(message)
+
+        optim_steps_actor += optim_steps_actor_ep
+        optim_steps_critic += optim_steps_critic_ep
 
         #TODO: optimize this code snippet: Correctly handling the number management of the replay buffer loading bar for the tqdm.
         if batch_instead_of_buff:
@@ -396,7 +411,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         message = (
             f"\n\n"
             f"====================================================================================================\n"
-            f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps} |\n"
+            f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed on the Actor: {optim_steps_actor} |\n"
             f"====================================================================================================\n"
             f"| POSITIONING: \n"
             f"|----------------------------------------------------------------------------------------------------\n"

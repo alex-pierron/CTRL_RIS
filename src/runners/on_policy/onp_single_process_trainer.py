@@ -144,8 +144,9 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
     # Initialize variables to track training progress
     best_average_reward = -np.inf
     best_instant_reward = -np.inf
-    optim_steps = 0
     total_steps = 0
+
+    optim_count = 0
 
     # Initialize arrays for trajectory tracking
     users_trajectory = np.zeros((num_episode, training_envs.num_users, 2))
@@ -220,9 +221,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         additional_information_best_case = 0
         step_time_list = []
         
-        avg_actor_loss_epoch = 0
-        avg_critic_loss_epoch = 0
+        avg_actor_loss_episode = 0
+        avg_critic_loss_episode = 0
+
+        ppo_epochs = network.ppo_epochs
+
         optim_steps_epoch = 0
+
         max_episode_reward = -np.inf
         max_episode_eavesdropper_reward = 0
         
@@ -312,9 +317,11 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 training_time_1 = time.time()
                 actor_loss, critic_loss, mean_reward = network.training()
                 step_time_list.append(time.time() - training_time_1)
-                avg_actor_loss_epoch += actor_loss
-                avg_critic_loss_epoch += critic_loss
-                optim_steps_epoch += 1
+                avg_actor_loss_episode += actor_loss
+                avg_critic_loss_episode += critic_loss
+                optim_steps_epoch += ppo_epochs
+
+                optim_count += ppo_epochs
 
                 writer.add_scalar("Training/Actor loss (per update)", actor_loss, total_steps)
                 writer.add_scalar("Training/Critic loss (per update)", critic_loss, total_steps)
@@ -352,8 +359,8 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 writer.add_histogram("Rewards/Instant reward", instant_user_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
 
                 # Calculate current average losses
-                current_avg_actor_loss = avg_actor_loss_epoch / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
-                current_avg_critic_loss = avg_critic_loss_epoch / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
+                current_avg_actor_loss = avg_actor_loss_episode / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
+                current_avg_critic_loss = avg_critic_loss_episode / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
                 
                 # Log loss metrics (only if we have training steps)
                 if optim_steps_epoch > 0:
@@ -404,8 +411,8 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         valid_rewards = instant_user_rewards[instant_user_rewards > -np.inf]
         avg_reward_episode = np.mean(valid_rewards) if len(valid_rewards) > 0 else 0.0
         avg_fairness_episode = np.mean(instant_user_jain_fairness[:len(valid_rewards)])
-        avg_actor_loss = avg_actor_loss_epoch / max(1, optim_steps_epoch)
-        avg_critic_loss = avg_critic_loss_epoch / max(1, optim_steps_epoch)
+        avg_actor_loss = avg_actor_loss_episode / max(1, optim_steps_epoch)
+        avg_critic_loss = avg_critic_loss_episode / max(1, optim_steps_epoch)
         
         writer.add_scalar("Rewards/Average Reward per episode", avg_reward_episode, episode)
         writer.add_scalar("Rewards/Max reward reached per episode", max_episode_reward, episode)
@@ -461,9 +468,10 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         # NOTE: Log episode summary (console + file)
         episode_max_instant_reward_reached = max(instant_user_rewards) if len(valid_rewards) > 0 else 0.0
         
+        
         # Message for printing to the console
         console_message = (
-            f"\n\n !!~ ON-POLICY TRAINING EPISODE No {episode} | Optimization Steps Performed: {optim_steps_epoch}\n"
+            f"\n\n !!~ ON-POLICY TRAINING EPISODE No {episode} | Optimization Steps Performed: {optim_count}\n"
             f"--------------------------------------------------------------------------------\n"
             f"   ~ ~ REWARDS:\n"
             f"     |--> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
@@ -479,7 +487,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         # Message for logging to a file
         log_message = (
             f"\n+{'=' * 100}+\n"
-            f"| !~ ON-POLICY TRAINING EPISODE N° {episode} | Optimization Steps Performed: {optim_steps_epoch} |\n"
+            f"| !~ ON-POLICY TRAINING EPISODE N° {episode} | Optimization Steps Performed: {optim_count} |\n"
             f"+{'=' * 100}+\n"
             f"|  ~ ~ REWARDS: |\n"
             f"|     --> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"

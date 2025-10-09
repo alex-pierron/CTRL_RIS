@@ -408,6 +408,7 @@ class TD3:
         # Update Critics
         if self.using_loss_scaling:
             if self.total_it % self.critic_frequency_update == 0:
+                updated_critic = True
                 with amp.autocast(self.device_string):
                     q1_values = self.critic_1(state, actions)
                     q2_values = self.critic_2(state, actions)
@@ -436,6 +437,7 @@ class TD3:
 
                 update_target_critic = True
             else:
+                updated_critic = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
                         q1_values = self.critic_1(state, actions)
@@ -451,6 +453,7 @@ class TD3:
 
             # Update Actor
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 with amp.autocast(self.device_string):
                     actor_actions = self.actor(state)
                     actor_q_values = self.critic_1(state, actor_actions)
@@ -467,6 +470,7 @@ class TD3:
                 self.scaler.update()
                 self.update_target_networks(update_target_critic=update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
                         actor_actions = self.actor(state)
@@ -481,6 +485,7 @@ class TD3:
         else:
             # Without loss scaling
             if self.total_it % self.critic_frequency_update == 0:
+                updated_critic = True
                 q1_values = self.critic_1(state, actions)
                 q2_values = self.critic_2(state, actions)
 
@@ -507,6 +512,7 @@ class TD3:
 
                 update_target_critic = True
             else:
+                updated_critic = False
                 with torch.no_grad():
                     q1_values = self.critic_1(state, actions)
                     q2_values = self.critic_2(state, actions)
@@ -522,6 +528,7 @@ class TD3:
 
             # Update Actor
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 actor_actions = self.actor(state)
                 actor_q_values = self.critic_1(state, actor_actions)
                 
@@ -536,6 +543,7 @@ class TD3:
                 self.actor_optimizer.step()
                 self.update_target_networks(update_target_critic=update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     actor_actions = self.actor(state)
                     actor_q_values = self.critic_1(state, actor_actions)
@@ -550,7 +558,7 @@ class TD3:
             actor_loss = actor_loss.to('cpu')
             critic_loss = critic_loss.to('cpu')
 
-        return actor_loss, critic_loss, rewards
+        return actor_loss, critic_loss, rewards, updated_actor, updated_critic
 
     def update_target_networks(self, update_target_actor=True, update_target_critic=True):
         """

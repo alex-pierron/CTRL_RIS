@@ -462,9 +462,8 @@ class PPO:
                 
                 surr1 = ratio * advs
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * advs
-              
-                entropy_loss = -entropy.mean()
-                actor_loss = -torch.min(surr1, surr2).mean() + self.entropy_coef * entropy_loss
+                
+                actor_loss = -torch.min(surr1, surr2).mean() - self.entropy_coef * entropy.mean()
                 # --- Value (Critic) Loss ---
                 values = self.critic(states)
                 critic_loss = F.mse_loss(values, returns)

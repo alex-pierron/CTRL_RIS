@@ -307,7 +307,7 @@ class DDPG:
                 beta_frames=per_beta_frames,
                 epsilon=per_epsilon
             )
-            print(f"DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+            print(f"\n DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
         else:
             self.replay_buffer = ReplayBuffer(
                 buffer_size=buffer_size,
@@ -315,7 +315,7 @@ class DDPG:
                 action_dim=action_dim,
                 numpy_rng=self.network_numpy_rng
             )
-            print("DDPG using standard Experience Replay")
+            print("\n DDPG using standard Experience Replay")
         
     def _sample_from_buffer(self, batch_size):
         """
@@ -416,6 +416,7 @@ class DDPG:
         
         if self.using_loss_scaling:
             if self.total_it % self.critic_frequency_update == 0:
+                updated_critic = True
                 with amp.autocast(self.device_string):
                     q_values = self.critic(state, actions)
                     if self.use_per:
@@ -432,6 +433,7 @@ class DDPG:
                     self.replay_buffer.update_priorities(indices, new_priorities)
                 update_target_critic = True
             else:
+                updated_critic = False
                 with torch.no_grad():
                     q_values = self.critic(state, actions)
                     if self.use_per:
@@ -441,6 +443,7 @@ class DDPG:
                 update_target_critic = False
             
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 with amp.autocast(self.device_string):
                     actor_actions = self.actor(state)
                     actor_q_values = self.critic(state, actor_actions)
@@ -454,6 +457,7 @@ class DDPG:
             # Update Target Networks
                 self.update_target_networks(update_target_critic = update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
                         actor_actions = self.actor(state)
@@ -467,6 +471,7 @@ class DDPG:
 
         else:
             if self.total_it % self.critic_frequency_update == 0:
+                updated_critic = True
                 q_values = self.critic(state, actions)
                 if self.use_per:
                     critic_loss = (weights * F.mse_loss(q_values, y, reduction='none')).mean()
@@ -481,6 +486,7 @@ class DDPG:
                     self.replay_buffer.update_priorities(indices, new_priorities)
                 update_target_critic = True
             else:
+                updated_critic = False
                 with torch.no_grad():
                     q_values = self.critic(state, actions)
                     if self.use_per:
@@ -491,6 +497,7 @@ class DDPG:
         
             # Update Actor according to equation (28) in the original article.
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 actor_actions = self.actor(state)
                 actor_q_values = self.critic(state, actor_actions)
                 if self.use_per:
@@ -503,6 +510,7 @@ class DDPG:
                 # Update Target Networks
                 self.update_target_networks(update_target_critic = update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     actor_actions = self.actor(state)
                     actor_q_values = self.critic(state, actor_actions)
@@ -516,7 +524,7 @@ class DDPG:
             actor_loss.to('cpu')
             critic_loss.to('cpu')
 
-        return actor_loss, critic_loss, rewards
+        return actor_loss, critic_loss, rewards, updated_actor, updated_critic
     
         
     def update_target_networks(self, update_target_actor = True, update_target_critic = True):
@@ -827,7 +835,7 @@ class Custom_DDPG:
         #* using mixed precision
         if self.using_loss_scaling:
             if self.total_it % self.critic_frequency_update == 0:
-                
+                updated_critic = True
                 with amp.autocast(self.device_string):
                     present_q_values = self.present_critic(state, actions)
                     future_q_values = self.future_critic(state, actions)
@@ -854,6 +862,7 @@ class Custom_DDPG:
                 update_target_critic = True
 
             else:
+                updated_critic = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
                         present_q_values = self.present_critic(state, actions)
@@ -869,6 +878,7 @@ class Custom_DDPG:
                 update_target_critic = False
             
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 with amp.autocast(self.device_string):
                     actor_q_values = self.future_critic(state, self.actor(state))
                     if self.use_per:
@@ -882,6 +892,7 @@ class Custom_DDPG:
                 # Update Target Networks
                 self.update_target_networks(update_target_critic = update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
                         actor_q_values = self.future_critic(state, self.actor(state))
@@ -894,6 +905,7 @@ class Custom_DDPG:
         #* not using mixed precision
         else:
             if self.total_it % self.critic_frequency_update == 0:
+                updated_critic = True
                 present_q_values = self.present_critic(state, actions)
                 future_q_values = self.future_critic(state, actions)
 
@@ -917,6 +929,7 @@ class Custom_DDPG:
                 update_target_critic = True
 
             else:
+                updated_critic = False
                 with torch.no_grad():
                     present_q_values = self.present_critic(state, actions)
                     future_q_values = self.future_critic(state, actions)
@@ -928,10 +941,10 @@ class Custom_DDPG:
                         present_reward_critic_loss = F.mse_loss(present_q_values, y_present_reward)
                         future_reward_critic_loss = F.mse_loss(future_q_values, y_future_reward)
 
-                update_target_critic = False
             
             # Update Actor according to equation (28) in the original article.
             if self.total_it % self.actor_frequency_update == 0:
+                updated_actor = True
                 actor_q_values = self.future_critic(state, self.actor(state))
                 if self.use_per:
                     actor_loss = (weights * actor_q_values).mean()
@@ -943,6 +956,7 @@ class Custom_DDPG:
                 # Update Target Networks
                 self.update_target_networks(update_target_critic = update_target_critic)
             else:
+                updated_actor = False
                 with torch.no_grad():
                     actor_q_values = self.future_critic(state, self.actor(state))
                     if self.use_per:
@@ -956,7 +970,7 @@ class Custom_DDPG:
             actor_loss.to('cpu')
             present_reward_critic_loss.to('cpu')
 
-        return actor_loss, present_reward_critic_loss, rewards
+        return actor_loss, present_reward_critic_loss, rewards, updated_actor, updated_critic
     
         
     def update_target_networks(self, update_target_actor = True, update_target_critic = True):

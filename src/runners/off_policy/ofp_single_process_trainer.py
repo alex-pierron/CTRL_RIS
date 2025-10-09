@@ -168,8 +168,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             "eavesdroppers_positions": []
         }
 
-    optim_steps = 0
-
+    optim_steps_actor = 0
+    optim_steps_critic = 0
     average_reward_per_env = np.zeros(num_episode)
     
     #TODO: optimize this code snippet:  managing the tqdm buffer bar, can be optimized
@@ -193,6 +193,9 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
         start_episode_time = time.time()
         
+        optim_steps_actor_ep = 0
+        optim_steps_critic_ep = 0
+
         if curriculum_learning:
             difficulty_config = Task_Manager.generate_episode_configs()
             # print(difficulty_config)
@@ -372,8 +375,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                     theta = training_envs.get_Theta()
                     theta_phi = training_envs.get_theta_phis()
                     """
-                    best_W = training_envs.get_W()
-                    best_Theta = training_envs.get_Theta()
+                    """best_W = training_envs.get_W()
+                    best_Theta = training_envs.get_Theta()"""
                     total_power_deployed = round(np.trace(np.diag(np.diag(W @ W.conj().T)).real), 4)
                     max_W_power_patterns = training_envs.get_W_power_patterns()
                     max_downlink_power_patterns = training_envs.get_downlink_power_patterns()
@@ -408,9 +411,15 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
                 # NOTE: Perform a training step and log the time taken
                 training_time_1 = time.time()
-                actor_loss, critic_loss, rewards = network.training(batch_size=batch_size)
-                step_time_list.append(time.time() - training_time_1)
-                optim_steps += 1
+                actor_loss, critic_loss, _, updated_actor, updated_critic = network.training(batch_size=batch_size)
+                training_time_2 = time.time()
+                
+                if updated_actor:
+                    optim_steps_actor_ep +=1 
+                    step_time_list.append(training_time_2 - training_time_1)
+
+                if updated_critic:
+                    optim_steps_critic_ep +=1 
 
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
@@ -447,8 +456,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                         writer.add_scalar("Rewards/Local Average Baseline Reward", local_average_basic_reward, current_step)
                         writer.add_histogram("Rewards/Instant reward", instant_user_rewards[num_step + 1 - frequency_information: num_step], current_step)
 
-                        current_avg_actor_loss = avg_actor_loss / num_step
-                        current_avg_critic_loss = avg_critic_loss / num_step
+                        current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
+                        current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
                         writer.add_scalar("Actor Loss/Instant actor loss", actor_loss, current_step)
                         writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                         writer.add_scalar("Critic Loss/Instant critic loss", critic_loss, current_step)
@@ -472,16 +481,19 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
                         message = (
                             f"\n|--> TRAINING EPISODE {episode - index_episode_buffer_filled}, STEP {num_step + 1}\n"
-                            f"     |--> Training the NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
+                            f"     |--> Training the Actor NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
                             f"  |--> LOCAL AVERAGE REWARD {np.float16(local_average_reward)}, MAX INSTANT REWARD REACHED {np.max(instant_user_rewards)}\n"
                             f"  |--> LOCAL AVERAGE BASIC REWARD {np.float16(local_average_basic_reward)}, MAXIMUM INSTANT BASIC REWARD: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
                             f"  |--> Detailed basic reward for best case: {additional_information_best_case}\n"       
-                            f" |--> ACTOR LOSS {actor_loss}, CRITIC LOSS {critic_loss}\n"
+                            f" |--> EPISODE AVERAGE ACTOR LOSS {current_avg_actor_loss}, EPISODE AVERAGE CRITIC LOSS {current_avg_critic_loss}\n"
                             f" |--> USER FAIRNESS FOR THE BEST INSTANT REWARD {instant_user_jain_fairness[np.argmax(instant_user_rewards)]}, LOCAL USER FAIRNESS {local_user_fairness}\n"
-                            f" |--> POWER DEPLOYED: {total_power_deployed} Watts\n"
+                            f" |--> POWER DEPLOYED: {round(total_power_deployed,5)} Watts\n"
                             f"---------------------------\n"
                         )
                         logger.verbose(message)
+
+        optim_steps_actor += optim_steps_actor_ep
+        optim_steps_critic += optim_steps_critic_ep
 
 
         #TODO: optimize this code snippet: Correctly handling the number management of the replay buffer loading bar for the tqdm.
@@ -507,8 +519,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
         # === Episode summary metrics ===
         # NOTE: Calculate average losses and rewards for the episode
-        avg_actor_loss /= max_num_step_per_episode
-        avg_critic_loss /= max_num_step_per_episode
+        avg_actor_loss /= optim_steps_actor_ep
+        avg_critic_loss /= optim_steps_critic_ep
         avg_reward = np.mean(instant_user_rewards)
         avg_fairness = np.mean(instant_user_jain_fairness)
         
@@ -653,7 +665,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
             # Message for printing to the console
             console_message = (
-                f"\n\n !!~ TRAINING EPISODE No {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps}\n"
+                f"\n\n !!~ TRAINING EPISODE No {episode - index_episode_buffer_filled} | Optimization Steps Performed on Actor: {optim_steps_actor}\n"
                 f"--------------------------------------------------------------------------------\n"
                 f"   ~ ~ REWARDS:\n"
                 f"     |--> Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
@@ -670,7 +682,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             # Message for logging to a file
             log_message = (
                 f"\n+{'=' * 100}+\n"
-                f"| !~ TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps} |\n"
+                f"| !~ TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed On actor: {optim_steps_actor} |\n"
                 f"+{'=' * 100}+\n"
                 f"|  ~ ~ REWARDS: |\n"
                 f"|     --> Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"

@@ -166,6 +166,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     best_average_reward = 0
     optim_steps = 0
     
+    optim_steps_per_ep = int(ppo_epochs * ( max_num_step_per_episode // (rollout_size//n_rollout_envs) ) )
+    
     if not using_eavesdropper:
         eavesdroppers_positions = None
     
@@ -175,10 +177,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     avg_user_fairness_all_episode_general = np.zeros(num_episode)
 
     #TODO: optimize this code snippet:  managing the tqdm buffer bar, can be optimized
-    buffer_bar_finished = False
     buffer_number_of_required_episode = buffer_size//(n_rollout_envs *max_num_step_per_episode)
-    buffer_smaller_than_one_episode = (buffer_size//(n_rollout_envs *max_num_step_per_episode) < 1)
-    length_episode_rb_matching = ( (buffer_size % (n_rollout_envs *max_num_step_per_episode)) == 0)
+    
     
     if buffer_number_of_required_episode == 0:
         buffer_number_of_required_episode = 1
@@ -186,6 +186,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     # === Main training loop over episodes ===
     for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
         
+        current_optim_steps_ep = 0
+
         if curriculum_learning:
             difficulty_config = Task_Manager.generate_episode_configs()
             # print(difficulty_config)
@@ -292,8 +294,7 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 training_time_1 = time.time()
                 actor_loss, critic_loss, mean_reward = network.training()
                 step_time_list.append(time.time() - training_time_1)
-                optim_steps += ppo_epochs
-                
+                current_optim_steps_ep += ppo_epochs
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
                 
@@ -302,8 +303,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 # NOTE: Periodic logging of buffer stats, losses, and fairness
                 if (current_step + 1) % frequency_information == 0 and (num_step +1) % frequency_information == 0:
 
-                    current_avg_actor_loss = avg_actor_loss / num_step
-                    current_avg_critic_loss = avg_critic_loss / num_step
+                    current_avg_actor_loss = avg_actor_loss / current_optim_steps_ep
+                    current_avg_critic_loss = avg_critic_loss / current_optim_steps_ep
                     writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                     writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
 
@@ -363,9 +364,10 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     episodes_outcomes = Task_Manager.compute_episodes_outcome( downlink_sum = training_envs.get_downlink_sum_for_success_conditions() , uplink_sum = training_envs.get_uplink_sum_for_success_conditions())
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
 
-
-        avg_actor_loss /= max_num_step_per_episode
-        avg_critic_loss /= max_num_step_per_episode
+        optim_steps += optim_steps_per_ep
+            
+        avg_actor_loss /= optim_steps_per_ep
+        avg_critic_loss /= optim_steps_per_ep
         avg_reward = np.mean(total_reward) / max_num_step_per_episode
 
         avg_user_fairness_all_envs = np.mean(instant_user_jain_fairness)

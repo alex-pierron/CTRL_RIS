@@ -201,7 +201,7 @@ def main(args):
                               rollout_size= n_rollout_train * network_config.get("rollout_size",256),clip_range= network_config.get("clip_range",0.01),
                               ppo_epochs = network_config.get("ppo_epochs",5), minibatch_size = network_config.get("batch_size",16),
                               )
-    # n_rollout_train * 
+
     # * Recording information of the configuration file and printing it in the console
 
     write_line_to_file(logs_terminal_txt_file, f" \n Timestamp is {timestamp} \n")
