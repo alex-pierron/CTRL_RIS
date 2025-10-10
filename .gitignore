@@ -71,3 +71,4 @@ mlruns/
 *.yaml
 *.yml
 tests/playground.ipynb
+tests/playground_2.ipynb

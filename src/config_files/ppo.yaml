@@ -45,7 +45,7 @@ Network:
 
 Training_parameters:
   number_episodes: 15000
-  max_steps_per_episode: 1025
+  max_steps_per_episode: 1024
   frequency_information: 10000
   network_save_checkpoint_frequency: 5000
   Curriculum_Learning: True
