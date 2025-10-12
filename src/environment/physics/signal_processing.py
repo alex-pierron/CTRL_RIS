@@ -212,7 +212,6 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     # For all users except k
     user_interference_not_k = 0
     for indice in indices_except_k:
-        #user_channel = H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[indice]
         user_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS[indice]
         user_interference_not_k += (1 + kappa_B_u_i) * rho * P_users[indice] * np.abs(user_channel)**2
     
@@ -225,7 +224,7 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
 
     # Second term: Distortion noise caused by BS
     diag_matrix = np.diag(np.diag(WWH)).real
-    distortion_term = 0 # (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].T  * np.sqrt(gains_transmitter_ris_receiver[k]) ).real
+    distortion_term = 0
     #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
     #distortion_term = (kappa_S_d * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real

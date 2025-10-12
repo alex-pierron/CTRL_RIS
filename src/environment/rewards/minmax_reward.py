@@ -17,7 +17,7 @@ def R_k_minmax(k: int, L: int, SINR_D_k, SINR_U_k, SINR_E_d_k_l, SINR_E_u_k_l,
 
 
 
-def compute_minmax_reward(K: int, L: int, SINR_Downlink_k, SINR_Uplink_k, SINR_E_d_k_l, SINR_E_u_k_l,eavesdropper_active, p: float = 1):
+def compute_minmax_reward(K: int, L: int, SINR_Downlink_k, SINR_Uplink_k, SINR_E_d_k_l, SINR_E_u_k_l,eavesdropper_active):
     
     def compute_reward(k):
         R_B_k, R_S_k = R_k_minmax(k, L, SINR_Downlink_k, SINR_Uplink_k, SINR_E_d_k_l, SINR_E_u_k_l, eavesdropper_active)
@@ -25,13 +25,9 @@ def compute_minmax_reward(K: int, L: int, SINR_Downlink_k, SINR_Uplink_k, SINR_E
 
     # Compute rewards for all users
     users_rewards = np.array([compute_reward(k) for k in range(K)])
-
     # Separate R_B_k and R_S_k
     R_B_k_values = users_rewards[:, 0]
     R_S_k_values = users_rewards[:, 1]
-
     # Calculate the global reward
     global_reward = K * (np.min(R_B_k_values) +  np.min(R_S_k_values))
-    # global_reward = np.sum(R_B_k_values) / ((1+np.std(R_B_k_values))**p)  +np.sum(R_S_k_values) / ( (1+np.std(R_S_k_values)) **p)
-
     return users_rewards, global_reward
