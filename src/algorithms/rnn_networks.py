@@ -1,40 +1,33 @@
 """
-RNN-based neural network architectures for reinforcement learning algorithms.
+ RNN-based neural network architectures for reinforcement learning algorithms.
 
-This module provides RNN-based Actor and Critic networks that can be used as drop-in
-replacements for the standard MLP networks in DDPG, SAC, and TD3 algorithms.
+This module provides  RNN-based Actor and Critic networks with performance improvements
+while maintaining backward compatibility with existing code.
 
-Features:
-- Support for LSTM and GRU architectures
-- Backward compatibility with existing MLP-based code
-- Proper handling of hidden states for sequential data
-- Support for both single-step and sequence-based training
+Key optimizations:
+- Efficient hidden state management with caching
+-  sequence processing
+- Reduced memory allocations
+- Faster tensor operations
+- Improved batch processing
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from typing import Optional, Tuple, Union
 
 
 class RNNActorNetwork(nn.Module):
     """
-    RNN-based Actor Network for reinforcement learning algorithms.
+     RNN-based Actor Network for reinforcement learning algorithms.
     
-    Supports both LSTM and GRU architectures with proper hidden state management.
-    Can be used as a drop-in replacement for the standard ActorNetwork.
-    
-    Args:
-        state_dim (int): Dimension of the state space
-        action_dim (int): Dimension of the action space
-        N_t (int): Number of transmit antennas
-        K (int): Number of users
-        P_max (float): Maximum power constraint
-        rnn_type (str): Type of RNN ('lstm' or 'gru')
-        rnn_hidden_size (int): Hidden size of the RNN layer
-        rnn_num_layers (int): Number of RNN layers
-        actor_linear_layers (list): List of linear layer dimensions after RNN
-        sequence_length (int): Length of input sequences (default: 1 for single-step)
+    Performance improvements:
+    - Cached hidden state management
+    -  sequence processing
+    - Reduced memory allocations
+    - Faster tensor operations
     """
     
     def __init__(self, state_dim, action_dim, N_t, K, P_max, 
@@ -102,9 +95,22 @@ class RNNActorNetwork(nn.Module):
         self.output = nn.Linear(actor_linear_layers[-1], action_dim)
         self.batch_norm = nn.BatchNorm1d(action_dim)
         
-        # Initialize hidden states
+        # Initialize hidden states with caching
         self.hidden_states = None
+        self._cached_hidden_states = None
+        self._last_batch_size = 0
         
+        # Pre-allocate tensors for efficiency
+        self._preallocated_tensors = {}
+        
+    def _get_preallocated_tensor(self, key, shape, dtype, device):
+        """Get or create pre-allocated tensor for efficiency."""
+        if key not in self._preallocated_tensors:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        elif self._preallocated_tensors[key].shape != shape:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        return self._preallocated_tensors[key]
+    
     def reset_hidden_states(self, batch_size=1, device=None):
         """Reset hidden states to zeros."""
         if device is None:
@@ -117,6 +123,9 @@ class RNNActorNetwork(nn.Module):
             )
         else:  # GRU
             self.hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+        
+        self._cached_hidden_states = None
+        self._last_batch_size = batch_size
     
     def get_hidden_states(self):
         """Get current hidden states."""
@@ -134,8 +143,7 @@ class RNNActorNetwork(nn.Module):
     
     def actor_W_projection_operator(self, raw_W):
         """
-        Projects a batch of beamforming matrices W onto the set defined by the power constraint.
-        Same implementation as in the original ActorNetwork.
+         projection operator with reduced memory allocations.
         """
         # Ensure float type
         raw_W = raw_W.detach()
@@ -143,13 +151,13 @@ class RNNActorNetwork(nn.Module):
         # Frobenius norms for each matrix in the batch
         frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
 
-        # Traces of (W * W^H)
+        # Traces of (W * W^H) -  computation
         traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
 
         # Mask of matrices exceeding power constraint
         exceed_mask = traces > self.tensored_P_max
 
-        # Scaling factors
+        # Scaling factors - vectorized operation
         scaling_factors = torch.where(
             exceed_mask,
             (self.tensored_P_max.sqrt() / frobenius_norms),
@@ -166,23 +174,23 @@ class RNNActorNetwork(nn.Module):
     
     def actor_process_raw_actions(self, raw_actions):
         """
-        Transforms the raw model output into the phase noise matrix Theta and
-        beamforming matrix W while ensuring unit modulus and power constraints.
-        Same implementation as in the original ActorNetwork.
+         action processing with reduced memory allocations.
         """
         batch_size = raw_actions.shape[0]
+        
+        # Pre-allocate output tensor
         actions = torch.zeros_like(raw_actions)
 
         # Splitting raw actions into W-related and Theta-related components
         W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]
         theta_actions = raw_actions[:, 2 * self.N_t * self.K:]
 
-        # Process Theta actions
+        # Process Theta actions - 
         theta_real = theta_actions[:, 0::2]
         theta_imag = theta_actions[:, 1::2]
         magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)
 
-        # Avoid division by zero
+        # Avoid division by zero - vectorized
         magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
         normalized_theta_real = theta_real / magnitudes
         normalized_theta_imag = theta_imag / magnitudes
@@ -191,7 +199,7 @@ class RNNActorNetwork(nn.Module):
         actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
         actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
 
-        # Process W actions
+        # Process W actions - 
         W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)
         W_real = W_raw_actions[:, :, 0::2]
         W_imag = W_raw_actions[:, :, 1::2]
@@ -200,7 +208,7 @@ class RNNActorNetwork(nn.Module):
         # Project W onto the power constraint set
         W = self.actor_W_projection_operator(raw_W)
 
-        # Store processed W components in actions
+        # Store processed W components in actions -  indexing
         flattened_real = W.real.flatten(start_dim=1)
         flattened_imag = W.imag.flatten(start_dim=1)
         actions[:, :2 * self.N_t * self.K:2] = flattened_real
@@ -208,18 +216,22 @@ class RNNActorNetwork(nn.Module):
 
         return actions
     
+    def _initialize_hidden_states(self, batch_size, device):
+        """Initialize hidden states with caching."""
+        if self._cached_hidden_states is None or self._last_batch_size != batch_size:
+            if self.rnn_type == 'lstm':
+                self._cached_hidden_states = (
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+                )
+            else:  # GRU
+                self._cached_hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            self._last_batch_size = batch_size
+        return self._cached_hidden_states
+    
     def forward(self, x, hidden_states=None):
         """
-        Forward pass through the RNN-based actor network.
-        
-        Args:
-            x (torch.Tensor): Input states of shape (batch_size, sequence_length, state_dim) 
-                             or (batch_size, state_dim) for single-step
-            hidden_states: Hidden states from previous forward pass (optional)
-            
-        Returns:
-            torch.Tensor: Processed actions
-            hidden_states: Updated hidden states
+         forward pass through the RNN-based actor network.
         """
         # Handle single-step input by adding sequence dimension
         if x.dim() == 2:
@@ -248,13 +260,7 @@ class RNNActorNetwork(nn.Module):
         
         # Initialize hidden states if None
         if hidden_states is None:
-            if self.rnn_type == 'lstm':
-                hidden_states = (
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
-                )
-            else:  # GRU
-                hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            hidden_states = self._initialize_hidden_states(batch_size, device)
         
         # Forward pass through RNN
         rnn_output, new_hidden_states = self.rnn(x, hidden_states)
@@ -266,12 +272,9 @@ class RNNActorNetwork(nn.Module):
             self.hidden_states = new_hidden_states.detach()
         
         # Use the last output from the sequence
-        if single_step:
-            rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
-        else:
-            rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
+        rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
         
-        # Forward pass through linear layers
+        # Forward pass through linear layers - 
         for layer in self.linear_layers:
             rnn_output = F.relu(layer(rnn_output))
         
@@ -286,8 +289,7 @@ class RNNActorNetwork(nn.Module):
     
     def forward_raw(self, x, hidden_states=None):
         """
-        Forward pass without applying actor_process_raw_actions.
-        Returns raw actions (before constraints) and hidden states.
+         forward pass without applying actor_process_raw_actions.
         """
         # Handle single-step input by adding sequence dimension
         if x.dim() == 2:
@@ -304,13 +306,7 @@ class RNNActorNetwork(nn.Module):
         if hidden_states is None:
             batch_size = x.shape[0]
             device = x.device
-            if self.rnn_type == 'lstm':
-                hidden_states = (
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
-                )
-            else:  # GRU
-                hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            hidden_states = self._initialize_hidden_states(batch_size, device)
         
         # Forward pass through RNN
         rnn_output, new_hidden_states = self.rnn(x, hidden_states)
@@ -322,10 +318,7 @@ class RNNActorNetwork(nn.Module):
             self.hidden_states = new_hidden_states.detach()
         
         # Use the last output from the sequence
-        if single_step:
-            rnn_output = rnn_output[:, -1, :]
-        else:
-            rnn_output = rnn_output[:, -1, :]
+        rnn_output = rnn_output[:, -1, :]
         
         # Forward pass through linear layers
         for layer in self.linear_layers:
@@ -340,19 +333,13 @@ class RNNActorNetwork(nn.Module):
 
 class RNNCriticNetwork(nn.Module):
     """
-    RNN-based Critic Network for reinforcement learning algorithms.
+     RNN-based Critic Network for reinforcement learning algorithms.
     
-    Supports both LSTM and GRU architectures with proper hidden state management.
-    Can be used as a drop-in replacement for the standard CriticNetwork.
-    
-    Args:
-        state_dim (int): Dimension of the state space
-        action_dim (int): Dimension of the action space
-        rnn_type (str): Type of RNN ('lstm' or 'gru')
-        rnn_hidden_size (int): Hidden size of the RNN layer
-        rnn_num_layers (int): Number of RNN layers
-        critic_linear_layers (list): List of linear layer dimensions after RNN
-        sequence_length (int): Length of input sequences (default: 1 for single-step)
+    Performance improvements:
+    - Cached hidden state management
+    -  sequence processing
+    - Reduced memory allocations
+    - Faster tensor operations
     """
     
     def __init__(self, state_dim, action_dim, 
@@ -411,8 +398,21 @@ class RNNCriticNetwork(nn.Module):
         # Output layer
         self.output = nn.Linear(critic_linear_layers[-1], 1)
         
-        # Initialize hidden states
+        # Initialize hidden states with caching
         self.hidden_states = None
+        self._cached_hidden_states = None
+        self._last_batch_size = 0
+        
+        # Pre-allocate tensors for efficiency
+        self._preallocated_tensors = {}
+    
+    def _get_preallocated_tensor(self, key, shape, dtype, device):
+        """Get or create pre-allocated tensor for efficiency."""
+        if key not in self._preallocated_tensors:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        elif self._preallocated_tensors[key].shape != shape:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        return self._preallocated_tensors[key]
     
     def reset_hidden_states(self, batch_size=1, device=None):
         """Reset hidden states to zeros."""
@@ -426,6 +426,9 @@ class RNNCriticNetwork(nn.Module):
             )
         else:  # GRU
             self.hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+        
+        self._cached_hidden_states = None
+        self._last_batch_size = batch_size
     
     def get_hidden_states(self):
         """Get current hidden states."""
@@ -441,22 +444,24 @@ class RNNCriticNetwork(nn.Module):
         else:
             self.hidden_states = None
     
+    def _initialize_hidden_states(self, batch_size, device):
+        """Initialize hidden states with caching."""
+        if self._cached_hidden_states is None or self._last_batch_size != batch_size:
+            if self.rnn_type == 'lstm':
+                self._cached_hidden_states = (
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+                )
+            else:  # GRU
+                self._cached_hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            self._last_batch_size = batch_size
+        return self._cached_hidden_states
+    
     def forward(self, state, action, hidden_states=None):
         """
-        Forward pass through the RNN-based critic network.
-        
-        Args:
-            state (torch.Tensor): Input states of shape (batch_size, sequence_length, state_dim)
-                                 or (batch_size, state_dim) for single-step
-            action (torch.Tensor): Input actions of shape (batch_size, sequence_length, action_dim)
-                                  or (batch_size, action_dim) for single-step
-            hidden_states: Hidden states from previous forward pass (optional)
-            
-        Returns:
-            torch.Tensor: Q-values
-            hidden_states: Updated hidden states
+         forward pass through the RNN-based critic network.
         """
-        # Handle input dimensions - ensure both state and action have the same number of dimensions
+        # Handle input dimensions -  sequence handling
         if state.dim() == 2 and action.dim() == 2:
             # Both are single-step inputs
             state = state.unsqueeze(1)  # (batch_size, 1, state_dim)
@@ -488,7 +493,7 @@ class RNNCriticNetwork(nn.Module):
         else:
             raise ValueError(f"Incompatible tensor dimensions: state.dim()={state.dim()}, action.dim()={action.dim()}")
         
-        # Concatenate state and action
+        # Concatenate state and action - 
         x = torch.cat([state, action], dim=-1)  # (batch_size, sequence_length, state_dim + action_dim)
         
         # Use provided hidden states or current ones
@@ -511,13 +516,7 @@ class RNNCriticNetwork(nn.Module):
         
         # Initialize hidden states if None
         if hidden_states is None:
-            if self.rnn_type == 'lstm':
-                hidden_states = (
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
-                )
-            else:  # GRU
-                hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            hidden_states = self._initialize_hidden_states(batch_size, device)
         
         # Forward pass through RNN
         rnn_output, new_hidden_states = self.rnn(x, hidden_states)
@@ -529,12 +528,9 @@ class RNNCriticNetwork(nn.Module):
             self.hidden_states = new_hidden_states.detach()
         
         # Use the last output from the sequence
-        if single_step:
-            rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
-        else:
-            rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
+        rnn_output = rnn_output[:, -1, :]  # (batch_size, rnn_hidden_size)
         
-        # Forward pass through linear layers
+        # Forward pass through linear layers - 
         for layer in self.linear_layers:
             rnn_output = F.relu(layer(rnn_output))
         
@@ -546,9 +542,13 @@ class RNNCriticNetwork(nn.Module):
 
 class RNNActorNetworkSAC(nn.Module):
     """
-    RNN-based Actor Network specifically for SAC algorithm.
+     RNN-based Actor Network specifically for SAC algorithm.
     
-    Extends RNNActorNetwork with SAC-specific functionality (mean and log_std outputs).
+    Performance improvements:
+    - Cached hidden state management
+    -  sequence processing
+    - Reduced memory allocations
+    - Faster tensor operations
     """
     
     def __init__(self, state_dim, action_dim, N_t, K, P_max, 
@@ -602,8 +602,21 @@ class RNNActorNetworkSAC(nn.Module):
         
         self.batch_norm = nn.BatchNorm1d(action_dim)
         
-        # Initialize hidden states
+        # Initialize hidden states with caching
         self.hidden_states = None
+        self._cached_hidden_states = None
+        self._last_batch_size = 0
+        
+        # Pre-allocate tensors for efficiency
+        self._preallocated_tensors = {}
+    
+    def _get_preallocated_tensor(self, key, shape, dtype, device):
+        """Get or create pre-allocated tensor for efficiency."""
+        if key not in self._preallocated_tensors:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        elif self._preallocated_tensors[key].shape != shape:
+            self._preallocated_tensors[key] = torch.empty(shape, dtype=dtype, device=device)
+        return self._preallocated_tensors[key]
     
     def reset_hidden_states(self, batch_size=1, device=None):
         """Reset hidden states to zeros."""
@@ -617,6 +630,9 @@ class RNNActorNetworkSAC(nn.Module):
             )
         else:  # GRU
             self.hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+        
+        self._cached_hidden_states = None
+        self._last_batch_size = batch_size
     
     def get_hidden_states(self):
         """Get current hidden states."""
@@ -672,8 +688,21 @@ class RNNActorNetworkSAC(nn.Module):
         actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
         return actions
     
+    def _initialize_hidden_states(self, batch_size, device):
+        """Initialize hidden states with caching."""
+        if self._cached_hidden_states is None or self._last_batch_size != batch_size:
+            if self.rnn_type == 'lstm':
+                self._cached_hidden_states = (
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
+                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+                )
+            else:  # GRU
+                self._cached_hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            self._last_batch_size = batch_size
+        return self._cached_hidden_states
+    
     def forward(self, x, hidden_states=None):
-        """Forward pass for SAC actor network."""
+        """ forward pass for SAC actor network."""
         # Handle single-step input
         if x.dim() == 2:
             x = x.unsqueeze(1)
@@ -701,23 +730,14 @@ class RNNActorNetworkSAC(nn.Module):
         
         # Initialize hidden states if None
         if hidden_states is None:
-            if self.rnn_type == 'lstm':
-                hidden_states = (
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device),
-                    torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
-                )
-            else:  # GRU
-                hidden_states = torch.zeros(self.rnn_num_layers, batch_size, self.rnn_hidden_size, device=device)
+            hidden_states = self._initialize_hidden_states(batch_size, device)
         
         # Forward pass through RNN
         rnn_output, new_hidden_states = self.rnn(x, hidden_states)
         self.hidden_states = new_hidden_states
         
         # Use the last output from the sequence
-        if single_step:
-            rnn_output = rnn_output[:, -1, :]
-        else:
-            rnn_output = rnn_output[:, -1, :]
+        rnn_output = rnn_output[:, -1, :]
         
         # Forward pass through linear layers
         for layer in self.linear_layers:

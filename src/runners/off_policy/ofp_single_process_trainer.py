@@ -568,7 +568,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                             f"  |--> Detailed basic reward for best case: {additional_information_best_case}\n"
                             f" |--> EPISODE AVERAGE ACTOR LOSS {current_avg_actor_loss}, EPISODE AVERAGE CRITIC LOSS {current_avg_critic_loss}\n"
                             f" |--> USER FAIRNESS FOR THE BEST INSTANT REWARD {instant_user_jain_fairness[np.argmax(instant_user_rewards)]}, LOCAL USER FAIRNESS {local_user_fairness}\n"
-                            f" |--> POWER DEPLOYED: {round(total_power_deployed,5)} Watts\n"
+                            f" |--> POWER DEPLOYED: {total_power_deployed:,.4f} Watts"
                             f"---------------------------\n"
                         )
                         
@@ -601,8 +601,9 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         # EPISODE SUMMARY METRICS
         # ========================================================================
         # Calculate episode-level averages
-        avg_actor_loss /= optim_steps_actor_ep
-        avg_critic_loss /= optim_steps_critic_ep
+        if buffer_filled:
+            avg_actor_loss /= optim_steps_actor_ep
+            avg_critic_loss /= optim_steps_critic_ep
         avg_reward = np.mean(instant_user_rewards)
         avg_fairness = np.mean(instant_user_jain_fairness)
         

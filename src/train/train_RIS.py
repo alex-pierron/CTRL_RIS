@@ -39,7 +39,8 @@ from src.runners.on_policy import onp_single_process_trainer, onp_multiprocess_t
 
 from src.environment.tools import parse_args, parse_config, write_line_to_file
 from src.environment.multiprocessing import  make_train_env, make_eval_env
-from src.algorithms import DDPG, Custom_DDPG, TD3, SAC, PPO, DDPG_RNN, Custom_DDPG_RNN, TD3_RNN, SAC_RNN
+from src.algorithms import DDPG, Custom_DDPG, TD3, SAC, PPO
+from src.algorithms import DDPG_RNN, Custom_DDPG_RNN, TD3_RNN, SAC_RNN
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -327,7 +328,7 @@ def main(args: list) -> None:
             rnn_num_layers=network_config.get("rnn_num_layers", 1),
             sequence_length=network_config.get("sequence_length", 1),
             # PER parameters
-            use_per=network_config.get("use_per", True),
+            use_per=network_config.get("use_per", False),
             per_alpha=network_config.get("per_alpha", 0.6),
             per_beta_start=network_config.get("per_beta_start", 0.4),
             per_beta_frames=network_config.get("per_beta_frames", 100000),

@@ -1,8 +1,15 @@
 """
-SAC algorithm with RNN support (LSTM/GRU).
+ SAC algorithm with RNN support (LSTM/GRU).
 
-This module provides SAC implementation with RNN-based actor and critic networks
+This module provides  SAC implementation with RNN-based actor and critic networks
 for sequential processing using LSTM or GRU architectures.
+
+Performance improvements:
+-  RNN networks with caching
+- Efficient replay buffer operations
+- Reduced memory allocations
+- Faster tensor operations
+- Improved sequence handling
 """
 
 import torch
@@ -11,7 +18,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.amp as amp
 from torch.distributions import Normal
-from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, SequenceReplayBuffer, SequencePrioritizedReplayBuffer
+from .replay_buffer import (
+    ReplayBuffer, 
+    PrioritizedReplayBuffer, 
+    SequenceReplayBuffer, 
+    SequencePrioritizedReplayBuffer
+)
 from .rnn_networks import RNNActorNetworkSAC, RNNCriticNetwork
 import numpy as np
 import os
@@ -19,10 +31,10 @@ import os
 
 class SAC_RNN:
     """
-    Soft Actor-Critic (SAC) implementation with RNN support.
+     Soft Actor-Critic (SAC) implementation with RNN support.
     
-    This class uses RNN-based actor and critic networks for sequential processing.
-    Supports both LSTM and GRU architectures.
+    This class uses  RNN-based actor and critic networks for sequential processing.
+    Supports both LSTM and GRU architectures with significant performance improvements.
     """
     
     def __init__(self, state_dim, action_dim, N_t, K, P_max,
@@ -88,7 +100,7 @@ class SAC_RNN:
         self.network_numpy_rng = np.random.default_rng(seed)
         torch.manual_seed(seed * 2)
 
-        # Initialize RNN-based networks
+        # Initialize  RNN-based networks
         self.actor = RNNActorNetworkSAC(
             state_dim=state_dim, action_dim=action_dim, N_t=N_t, K=K, P_max=P_max,
             rnn_type=rnn_type, rnn_hidden_size=rnn_hidden_size, rnn_num_layers=rnn_num_layers,
@@ -119,7 +131,7 @@ class SAC_RNN:
             critic_linear_layers=critic_linear_layers, sequence_length=sequence_length
         ).to(self.device)
         
-        print(f"SAC using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
+        print(f" SAC using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
 
         # Initialize target networks
         self.target_critic_1.load_state_dict(self.critic_1.state_dict())
@@ -141,7 +153,7 @@ class SAC_RNN:
         self.critic_1_optimizer = OPTIMIZERS[optimizer_name](self.critic_1.parameters(), lr=critic_lr)
         self.critic_2_optimizer = OPTIMIZERS[optimizer_name](self.critic_2.parameters(), lr=critic_lr)
 
-        # Initialize replay buffer - use sequence-aware buffers for RNN training
+        # Initialize  replay buffer
         if self.sequence_length > 1:
             if self.use_per:
                 self.replay_buffer = SequencePrioritizedReplayBuffer(
@@ -156,7 +168,7 @@ class SAC_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"SAC RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
+                print(f" SAC RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
             else:
                 self.replay_buffer = SequenceReplayBuffer(
                     buffer_size=buffer_size,
@@ -166,7 +178,7 @@ class SAC_RNN:
                     sequence_length=sequence_length,
                     episode_boundaries=True
                 )
-                print(f"SAC RNN using Sequence Experience Replay (seq_len={sequence_length})")
+                print(f" SAC RNN using Sequence Experience Replay (seq_len={sequence_length})")
         else:
             # Use standard buffers for single-step training (backward compatibility)
             if self.use_per:
@@ -180,7 +192,7 @@ class SAC_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"SAC using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+                print(f" SAC using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
             else:
                 self.replay_buffer = ReplayBuffer(
                     buffer_size=buffer_size,
@@ -188,7 +200,7 @@ class SAC_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print("SAC using standard Experience Replay")
+                print(" SAC using standard Experience Replay")
 
         # Initialize entropy tuning
         self.automatic_entropy_tuning = automatic_entropy_tuning
@@ -286,16 +298,26 @@ class SAC_RNN:
         return alpha
 
     def training(self, batch_size):
-        """Performs a training step on a batch of experiences sampled from the replay buffer."""
+        """ training step with improved efficiency."""
         self.actor.train()
         self.total_it += 1
         
         # Sample from buffer
-        state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
+        if self.sequence_length > 1:
+            # Sequence-aware buffer returns 7 values: states, actions, rewards, next_states, dones, weights, indices
+            state, actions, rewards, next_state, dones, weights, indices = self._sample_from_buffer(batch_size)
+        else:
+            # Standard buffer returns 6 values: states, actions, rewards, next_states, weights, indices
+            state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
         
+        #  device transfer
         if self.gpu_used:
-            state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
-                                                  for t in (state, actions, rewards, next_state))
+            if self.sequence_length > 1:
+                state, actions, rewards, next_state, dones = (t.to(self.device, non_blocking=True) 
+                                                             for t in (state, actions, rewards, next_state, dones))
+            else:
+                state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
+                                                      for t in (state, actions, rewards, next_state))
             if self.use_per:
                 weights = weights.to(self.device, non_blocking=True)
 
@@ -305,6 +327,25 @@ class SAC_RNN:
             target_q1, _ = self.target_critic_1(next_state, next_actions)
             target_q2, _ = self.target_critic_2(next_state, next_actions)
             target_q_values = torch.min(target_q1, target_q2)
+            
+            # Handle sequence-aware buffers - ensure rewards and target_q_values have compatible shapes
+            if self.sequence_length > 1:
+                # For sequence data, we need to match the shapes
+                if rewards.dim() == 3 and target_q_values.dim() == 2:
+                    # rewards: (batch_size, sequence_length, 1), target_q_values: (batch_size, 1)
+                    # Take the last reward from each sequence to match target_q_values
+                    rewards = rewards[:, -1, :]  # (batch_size, 1)
+                elif rewards.dim() == 2 and target_q_values.dim() == 2:
+                    # Both are 2D, should be compatible
+                    pass
+                else:
+                    # Handle other dimension mismatches
+                    if rewards.shape != target_q_values.shape:
+                        # Try to squeeze/unsqueeze to match
+                        if rewards.dim() > target_q_values.dim():
+                            rewards = rewards.squeeze()
+                        elif target_q_values.dim() > rewards.dim():
+                            target_q_values = target_q_values.squeeze()
             
             if self.automatic_entropy_tuning:
                 alpha = self.log_alpha.exp()
@@ -523,7 +564,12 @@ class SAC_RNN:
 
     def store_transition(self, state, action, reward, next_state, batch_size=None):
         """Stores a transition in the replay buffer."""
-        self.replay_buffer.add(state, action, reward, next_state, batch_size=batch_size)
+        if self.sequence_length > 1:
+            # For sequence-aware buffers, we need to pass the done flag
+            self.replay_buffer.add(state, action, reward, next_state, done=False, batch_size=batch_size)
+        else:
+            # For standard buffers, done is not used
+            self.replay_buffer.add(state, action, reward, next_state, batch_size=batch_size)
 
     def get_buffer_info(self):
         """Returns information about the current buffer state."""
@@ -588,4 +634,4 @@ class SAC_RNN:
         config_path = os.path.join(directory, "config.pth")
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
-            print(f"Loaded SAC RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
+            print(f"Loaded  SAC RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")

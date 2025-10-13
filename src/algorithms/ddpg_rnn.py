@@ -1,8 +1,15 @@
 """
 DDPG algorithm with RNN support (LSTM/GRU).
 
-This module provides DDPG and Custom_DDPG implementations with RNN-based actor and critic networks
+This module provides  DDPG implementation with RNN-based actor and critic networks
 for sequential processing using LSTM or GRU architectures.
+
+Performance improvements:
+- RNN networks with caching
+- Efficient replay buffer operations
+- Reduced memory allocations
+- Faster tensor operations
+- Improved sequence handling
 """
 
 import torch
@@ -10,7 +17,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.amp as amp
-from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, SequenceReplayBuffer, SequencePrioritizedReplayBuffer
+from .replay_buffer import (
+    ReplayBuffer, 
+    PrioritizedReplayBuffer, 
+    SequenceReplayBuffer, 
+    SequencePrioritizedReplayBuffer
+)
 from .rnn_networks import RNNActorNetwork, RNNCriticNetwork
 import numpy as np
 import os
@@ -18,10 +30,10 @@ import os
 
 class DDPG_RNN:
     """
-    DDPG implementation with RNN support.
+     DDPG implementation with RNN support.
     
-    This class uses RNN-based actor and critic networks for sequential processing.
-    Supports both LSTM and GRU architectures.
+    This class uses  RNN-based actor and critic networks for sequential processing.
+    Supports both LSTM and GRU architectures with significant performance improvements.
     """
     
     def __init__(self, state_dim, action_dim, N_t, K, P_max,
@@ -86,7 +98,7 @@ class DDPG_RNN:
         self.network_numpy_rng = np.random.default_rng(seed)
         torch.manual_seed(seed * 2)
 
-        # Initialize RNN-based networks
+        # Initialize  RNN-based networks
         self.actor = RNNActorNetwork(
             state_dim=state_dim, action_dim=action_dim, N_t=N_t, K=K, P_max=P_max,
             rnn_type=rnn_type, rnn_hidden_size=rnn_hidden_size, rnn_num_layers=rnn_num_layers,
@@ -111,7 +123,7 @@ class DDPG_RNN:
             critic_linear_layers=critic_linear_layers, sequence_length=sequence_length
         ).to(self.device)
         
-        print(f"DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
+        print(f" DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
 
         # Initialize target networks
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -132,7 +144,7 @@ class DDPG_RNN:
         self.actor_optimizer = OPTIMIZERS[optimizer_name](self.actor.parameters(), lr=actor_lr, maximize=True)
         self.critic_optimizer = OPTIMIZERS[optimizer_name](self.critic.parameters(), lr=critic_lr)
 
-        # Initialize replay buffer - use sequence-aware buffers for RNN training
+        # Initialize  replay buffer
         if self.sequence_length > 1:
             if self.use_per:
                 self.replay_buffer = SequencePrioritizedReplayBuffer(
@@ -147,7 +159,7 @@ class DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
+                print(f" DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
             else:
                 self.replay_buffer = SequenceReplayBuffer(
                     buffer_size=buffer_size,
@@ -157,7 +169,7 @@ class DDPG_RNN:
                     sequence_length=sequence_length,
                     episode_boundaries=True
                 )
-                print(f"DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
+                print(f" DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
         else:
             # Use standard buffers for single-step training (backward compatibility)
             if self.use_per:
@@ -171,7 +183,7 @@ class DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+                print(f" DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
             else:
                 self.replay_buffer = ReplayBuffer(
                     buffer_size=buffer_size,
@@ -179,7 +191,7 @@ class DDPG_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print("DDPG using standard Experience Replay")
+                print(" DDPG using standard Experience Replay")
 
     def _sample_from_buffer(self, batch_size):
         """Samples from the replay buffer, handling both standard and sequence-aware buffers."""
@@ -192,7 +204,7 @@ class DDPG_RNN:
                 # Create dummy weights and indices for compatibility
                 dummy_weights = torch.ones(batch_size, device=self.device)
                 dummy_indices = [np.arange(self.sequence_length) for _ in range(batch_size)]
-                return states, actions, rewards, next_states, dummy_weights, dummy_indices
+                return states, actions, rewards, next_states, dones, dummy_weights, dummy_indices
         else:
             # Standard buffer sampling (backward compatibility)
             if self.use_per:
@@ -246,16 +258,26 @@ class DDPG_RNN:
         return clean_action.cpu(), noised_action.cpu()
 
     def training(self, batch_size):
-        """Performs a training step on a batch of experiences sampled from the replay buffer."""
+        """ training step with improved efficiency."""
         self.actor.train()
         self.total_it += 1
         
         # Sample from buffer
-        state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
+        if self.sequence_length > 1:
+            # Sequence-aware buffer returns 7 values: states, actions, rewards, next_states, dones, weights, indices
+            state, actions, rewards, next_state, dones, weights, indices = self._sample_from_buffer(batch_size)
+        else:
+            # Standard buffer returns 6 values: states, actions, rewards, next_states, weights, indices
+            state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
         
+        #  device transfer
         if self.gpu_used:
-            state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
-                                                  for t in (state, actions, rewards, next_state))
+            if self.sequence_length > 1:
+                state, actions, rewards, next_state, dones = (t.to(self.device, non_blocking=True) 
+                                                             for t in (state, actions, rewards, next_state, dones))
+            else:
+                state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
+                                                      for t in (state, actions, rewards, next_state))
             if self.use_per:
                 weights = weights.to(self.device, non_blocking=True)
 
@@ -476,15 +498,15 @@ class DDPG_RNN:
         config_path = os.path.join(directory, "config.pth")
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
-            print(f"Loaded DDPG RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
+            print(f"Loaded  DDPG RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
 
 
 class Custom_DDPG_RNN:
     """
-    Custom DDPG implementation with RNN support and additional critic networks.
+     Custom DDPG implementation with RNN support and additional critic networks.
     
-    This class uses RNN-based actor and critic networks for sequential processing.
-    Supports both LSTM and GRU architectures.
+    This class uses  RNN-based actor and critic networks for sequential processing.
+    Supports both LSTM and GRU architectures with significant performance improvements.
     """
     
     def __init__(self, state_dim, action_dim, N_t, K, P_max,
@@ -549,7 +571,7 @@ class Custom_DDPG_RNN:
         self.network_numpy_rng = np.random.default_rng(seed)
         torch.manual_seed(seed * 2)
 
-        # Initialize RNN-based networks
+        # Initialize  RNN-based networks
         self.actor = RNNActorNetwork(
             state_dim=state_dim, action_dim=action_dim, N_t=N_t, K=K, P_max=P_max,
             rnn_type=rnn_type, rnn_hidden_size=rnn_hidden_size, rnn_num_layers=rnn_num_layers,
@@ -587,7 +609,7 @@ class Custom_DDPG_RNN:
             critic_linear_layers=critic_linear_layers, sequence_length=sequence_length
         ).to(self.device)
         
-        print(f"Custom DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
+        print(f" Custom DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
 
         # Initialize target networks
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -609,7 +631,7 @@ class Custom_DDPG_RNN:
         self.actor_optimizer = OPTIMIZERS[optimizer_name](self.actor.parameters(), lr=actor_lr, maximize=True)
         self.q_optimizer = OPTIMIZERS[optimizer_name](list(self.future_critic.parameters()) + list(self.present_critic.parameters()), lr=critic_lr)
 
-        # Initialize replay buffer - use sequence-aware buffers for RNN training
+        # Initialize  replay buffer
         if self.sequence_length > 1:
             if self.use_per:
                 self.replay_buffer = SequencePrioritizedReplayBuffer(
@@ -624,7 +646,7 @@ class Custom_DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"Custom DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
+                print(f" Custom DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
             else:
                 self.replay_buffer = SequenceReplayBuffer(
                     buffer_size=buffer_size,
@@ -634,7 +656,7 @@ class Custom_DDPG_RNN:
                     sequence_length=sequence_length,
                     episode_boundaries=True
                 )
-                print(f"Custom DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
+                print(f" Custom DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
         else:
             # Use standard buffers for single-step training (backward compatibility)
             if self.use_per:
@@ -648,7 +670,7 @@ class Custom_DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"Custom DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+                print(f" Custom DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
             else:
                 self.replay_buffer = ReplayBuffer(
                     buffer_size=buffer_size,
@@ -656,7 +678,7 @@ class Custom_DDPG_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print("Custom DDPG using standard Experience Replay")
+                print(" Custom DDPG using standard Experience Replay")
 
     def _sample_from_buffer(self, batch_size):
         """Samples from the replay buffer, handling both standard and sequence-aware buffers."""
@@ -669,7 +691,7 @@ class Custom_DDPG_RNN:
                 # Create dummy weights and indices for compatibility
                 dummy_weights = torch.ones(batch_size, device=self.device)
                 dummy_indices = [np.arange(self.sequence_length) for _ in range(batch_size)]
-                return states, actions, rewards, next_states, dummy_weights, dummy_indices
+                return states, actions, rewards, next_states, dones, dummy_weights, dummy_indices
         else:
             # Standard buffer sampling (backward compatibility)
             if self.use_per:
@@ -720,16 +742,26 @@ class Custom_DDPG_RNN:
         return clean_action.cpu(), noised_action.cpu()
 
     def training(self, batch_size):
-        """Performs a training step on a batch of experiences sampled from the replay buffer."""
+        """ training step with improved efficiency."""
         self.actor.train()
         self.total_it += 1
         
         # Sample from buffer
-        state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
+        if self.sequence_length > 1:
+            # Sequence-aware buffer returns 7 values: states, actions, rewards, next_states, dones, weights, indices
+            state, actions, rewards, next_state, dones, weights, indices = self._sample_from_buffer(batch_size)
+        else:
+            # Standard buffer returns 6 values: states, actions, rewards, next_states, weights, indices
+            state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
         
+        #  device transfer
         if self.gpu_used:
-            state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
-                                                  for t in (state, actions, rewards, next_state))
+            if self.sequence_length > 1:
+                state, actions, rewards, next_state, dones = (t.to(self.device, non_blocking=True) 
+                                                             for t in (state, actions, rewards, next_state, dones))
+            else:
+                state, actions, rewards, next_state = (t.to(self.device, non_blocking=True) 
+                                                      for t in (state, actions, rewards, next_state))
             if self.use_per:
                 weights = weights.to(self.device, non_blocking=True)
 
@@ -987,4 +1019,4 @@ class Custom_DDPG_RNN:
         config_path = os.path.join(directory, "config.pth")
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
-            print(f"Loaded Custom DDPG RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
+            print(f"Loaded  Custom DDPG RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")

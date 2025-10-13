@@ -1294,59 +1294,7 @@ class RIS_Duplex(gym.Env):
                     self.max_sinr_b_k = self.sinr_downlink_details[k]
 
             pass
-        """# Optional: print log every N steps
-        if self.verbose and self._num_step > 1000 and self._num_step % 493 == 0 and self.print_info:
-            
-            if self.debugging:
-
-                signal_test_BS = np.sum(np.abs(self._channel_matrices["H_BS_Test_Point_BS"]  @ self._W[:, 0].reshape(-1, 1) ) **2) 
-
-                signal_test_user = np.squeeze(
-                    np.abs(self._channel_matrices["H_RIS_Test_Point"].conj() @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS_Test"] @ w_k) ** 2
-                )
-                signal_test_2 = np.squeeze(
-                    np.abs(self._channel_matrices["H_RIS_Test_Point"].conj() @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS_Test"] @ w_k) ** 2
-                )
-            if self.debugging:
-                print("\n" + "=" * 200)
-                print(f"{' DOWNLINK SIGNAL STATISTICS (Step {}) '.format(self._num_step):=^200}")
-                print("=" * 200)
-                print(f"{'Total power deployed at the BS:':<40} {signal_at_BS:.6e} W ({watts_to_dbm(signal_at_BS):.2f} dBm)")
-                print(f"{'Total power received at the RIS (all users):':<40} {watts_to_dbm(total_signal_before_ris):.2f} dBm")
-                print(f"{'Total power at the RIS after its reflection:':<40} {watts_to_dbm(signal_just_after_ris):.2f} dBm")
-                if self.debugging:
-                    print(f'The signal to the test point for BS (NLOS only) at {self.test_point_for_BS} is {watts_to_dbm(signal_test_BS):.2f} dBm')
-                print("-" * 200)
-                # RIS and users positions
-                users_positions_str = " / ".join([f"User {k} -> {self.users_positions[k]}" for k in range(num_users)])
-                print(f"RIS position: {self.RIS_position} | User positions: {users_positions_str}")
-                print("-" * 200)
-                # Column headers
-                print(f"{'User':<6} {'Min Signal (dBm)':>18} {'Max Signal (dBm)':>18} {'Avg Signal (dBm)':>18} {'Avg SINR (dB)':>18} {'Avg SINR (ratio)':>18} {'SINR (dB) for Max':>18} {'SINR (ratio) for Max ':>25} {' Interference for Max (dBm)':>25} {'Avg Interference (dBm)':>25}")
-                print("-" * 200)
-
-                # Data rows
-                for k in range(num_users):
-                    stats = self.sinr_downlink_details[k]
-                    print(f"{k:<6} "
-                        f"{stats['min_signal_dbm']:>18.4f} "
-                        f"{stats['max_signal_dbm']:>18.4f} "
-                        f"{stats['avg_signal_dbm']:>18.4f} "
-                        f"{stats['Average_SINR_in_db']:>18.4f}"
-                        f"{stats['Average_SINR_ratio']:>18.4f}"
-                        f"{watts_to_db(self.max_downlink_signal_strength[k] / self.max_downlink_interf_k[k]):>18.4f}"
-                        f"{self.max_downlink_signal_strength[k] / self.max_downlink_interf_k[k]:>25.4f}"
-                        f"{watts_to_dbm(self.max_downlink_interf_k[k]):>25.4f}"
-                        f"{stats['Average interference_noise']:>25.4f}")
-                print("-" * 200)
-                print(f'The signal to the user is {watts_to_dbm(signal)}')
-                if self.debugging:
-                    print(f'The signal to the test point for user point at {self.test_point_for_user} is {watts_to_dbm(signal_test_user)}')
-                    print(f'The signal to the test point for user point without .conj() is {watts_to_dbm(signal_test_2 )}')
-                    print(f'Difference of signal strength between user and test point for user is  {watts_to_dbm(signal) - watts_to_dbm(signal_test_user)}')
-                print("=" * 200 + "\n")
-        pass"""
-
+        
 
 
     def _SINR_uplink_all_users(self):
@@ -1395,7 +1343,6 @@ class RIS_Duplex(gym.Env):
                     self._channel_matrices["H_Users_RIS"][k]
                 ) ** 2
             )
-
             # Compute interference + noise power for user k
             interference_noise = Gamma_S_k(
                 self.K, k, self._Theta_Phi,self._gains_transmitter_ris_receiver,
@@ -1404,7 +1351,6 @@ class RIS_Duplex(gym.Env):
                 self.P_users, self.kappa[0],
                 self.delta_k_squared
             )
-
             # Compute SINR
             sinr_ratio = signal / interference_noise
             sinr_db = watts_to_db(sinr_ratio)
@@ -1419,22 +1365,18 @@ class RIS_Duplex(gym.Env):
                     'interference_noise_watts': float(interference_noise),
                     'interference_noise_dbm': float(watts_to_dbm(interference_noise))
                 })
-                
                 # Update cumulative statistics
                 self.user_info[k]['uplink']['cumulative_signal_watts'] += signal
                 self.user_info[k]['uplink']['cumulative_interference_watts'] += interference_noise
-                
                 # Update min/max signal tracking
                 if signal < self.user_info[k]['uplink']['min_signal_watts']:
                     self.user_info[k]['uplink']['min_signal_watts'] = signal
                 if signal > self.user_info[k]['uplink']['max_signal_watts']:
                     self.user_info[k]['uplink']['max_signal_watts'] = signal
-                
                 # Update average signal strength in dBm
                 if self._num_step > 0:
                     avg_signal_watts = self.user_info[k]['uplink']['cumulative_signal_watts'] / self._num_step
                     self.user_info[k]['uplink']['avg_signal_dbm'] = float(watts_to_dbm(avg_signal_watts))
-                    
                     # Update average SINR
                     avg_sinr_ratio = self.user_info[k]['uplink']['cumulative_signal_watts'] / self.user_info[k]['uplink']['cumulative_interference_watts']
                     self.user_info[k]['uplink']['avg_sinr_ratio'] = float(avg_sinr_ratio)
@@ -1452,11 +1394,12 @@ class RIS_Duplex(gym.Env):
                     "direct_signal": float(signal),
                     "interference_noise": float(interference_noise)
                 }
-
                 # Track the maximum SINR seen at the BS
                 if sinr_db > self.max_sinr_s_k.get("SINR_in_db", -np.inf):
                     self.max_sinr_s_k = self.sinr_s_details[k]
         pass        
+
+
 
     def SINR_E_d_k_l(self, k: int, l: int):
         """Return precomputed downlink SINR observed at eavesdropper l for user k.
@@ -1487,6 +1430,8 @@ class RIS_Duplex(gym.Env):
         if not hasattr(self, "sinr_eavesdropper_uplink") or self.sinr_eavesdropper_uplink.shape != (self.K, self._num_eavesdroppers):
             self._SINR_eavesdropper_uplink_all()
         return self.sinr_eavesdropper_uplink[k, l]
+
+
 
     def _SINR_eavesdropper_downlink_all(self):
         """Compute downlink SINR at all eavesdroppers for every user.
@@ -1565,6 +1510,8 @@ class RIS_Duplex(gym.Env):
                 
                 # Legacy array for backward compatibility
                 self.sinr_eavesdropper_downlink[k, l] = sinr_ratio
+
+
 
     def _SINR_eavesdropper_uplink_all(self):
         """Compute uplink SINR at all eavesdroppers for every user.

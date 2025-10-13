@@ -205,7 +205,7 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     inter_user_interference_term = 0
     for indice in indices_except_k:
         #inter_user_interference_term += np.abs(H_RIS_Users[k].conj() @ Theta_Phi @ H_BS_RIS @ W[:, indice])**2
-        pass
+        #pass
         inter_user_interference_term += np.abs(np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W[:, indice].reshape(-1, 1))**2
 
     # Third term: User-induced interference
