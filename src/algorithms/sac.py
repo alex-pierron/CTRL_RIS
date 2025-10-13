@@ -159,6 +159,7 @@ class ActorNetwork(nn.Module):
         return x
 
 
+
 class CriticNetwork(nn.Module):
     def __init__(self, state_dim, action_dim, critic_linear_layers = [128,128]):
         super(CriticNetwork, self).__init__()
@@ -177,7 +178,6 @@ class CriticNetwork(nn.Module):
         x = self.output(x)  # No activation for output
         return x
     
-
 
 
 class SAC:
@@ -665,4 +665,3 @@ class SAC:
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
             print(f"Loaded model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
-

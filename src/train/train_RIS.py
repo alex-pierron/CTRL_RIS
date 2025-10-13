@@ -39,7 +39,7 @@ from src.runners.on_policy import onp_single_process_trainer, onp_multiprocess_t
 
 from src.environment.tools import parse_args, parse_config, write_line_to_file
 from src.environment.multiprocessing import  make_train_env, make_eval_env
-from src.algorithms import DDPG, Custom_DDPG, TD3, SAC, PPO
+from src.algorithms import DDPG, Custom_DDPG, TD3, SAC, PPO, DDPG_RNN, Custom_DDPG_RNN, TD3_RNN, SAC_RNN
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -232,6 +232,140 @@ def main(args: list) -> None:
                               rollout_size= n_rollout_train * network_config.get("rollout_size",256),clip_range= network_config.get("clip_range",0.01),
                               ppo_epochs = network_config.get("ppo_epochs",5), minibatch_size = network_config.get("batch_size",16),
                               )
+    
+    # RNN-enabled algorithms (using separate RNN classes)
+    
+    elif algorithm_name.lower() == "ddpg_rnn":
+        network = DDPG_RNN(
+            state_dim=train_envs.state_dim,
+            action_dim=train_envs.action_dim,
+            gamma=network_config["gamma"],
+            N_t=train_envs.BS_transmit_antennas,
+            K=train_envs.num_users,
+            P_max=train_envs.users_max_power,
+            actor_linear_layers=network_config.get("actor_linear_layers", [128, 128, 128]),
+            critic_linear_layers=network_config.get("critic_linear_layers", [128, 128]),
+            device=device,
+            optimizer=network_config.get("optimizer", "adam"),
+            actor_lr=network_config["actor_lr"],
+            critic_lr=network_config["critic_lr"],
+            tau=network_config.get('tau', 0.0001),
+            critic_tau=network_config.get("critic_tau", 0.0001),
+            buffer_size=training_config.get("buffer_size"),
+            actor_frequency_update=network_config.get('actor_frequency_update', 2),
+            critic_frequency_update=network_config.get('critic_frequency_update', 1),
+            action_noise_scale=action_noise_scale,
+            # RNN parameters
+            rnn_type=network_config.get("rnn_type", "lstm"),
+            rnn_hidden_size=network_config.get("rnn_hidden_size", 128),
+            rnn_num_layers=network_config.get("rnn_num_layers", 1),
+            sequence_length=network_config.get("sequence_length", 1),
+            # PER parameters
+            use_per=network_config.get("use_per", False),
+            per_alpha=network_config.get("per_alpha", 0.6),
+            per_beta_start=network_config.get("per_beta_start", 0.4),
+            per_beta_frames=network_config.get("per_beta_frames", 100000),
+            per_epsilon=network_config.get("per_epsilon", 1e-6)
+        )
+    
+    elif algorithm_name.lower() == "custom_ddpg_rnn":
+        network = Custom_DDPG_RNN(
+            state_dim=train_envs.state_dim,
+            action_dim=train_envs.action_dim,
+            gamma=network_config["gamma"],
+            N_t=train_envs.BS_transmit_antennas,
+            K=train_envs.num_users,
+            P_max=train_envs.users_max_power,
+            actor_linear_layers=network_config.get("actor_linear_layers", [128, 128, 128]),
+            critic_linear_layers=network_config.get("critic_linear_layers", [128, 128]),
+            device=device,
+            optimizer=network_config.get("optimizer", "adam"),
+            actor_lr=network_config["actor_lr"],
+            critic_lr=network_config["critic_lr"],
+            tau=network_config.get('tau', 0.0001),
+            critic_tau=network_config.get("critic_tau", 0.001),
+            buffer_size=training_config.get("buffer_size"),
+            actor_frequency_update=network_config.get('actor_frequency_update', 1),
+            critic_frequency_update=network_config.get('critic_frequency_update', 1),
+            action_noise_scale=action_noise_scale,
+            # RNN parameters
+            rnn_type=network_config.get("rnn_type", "lstm"),
+            rnn_hidden_size=network_config.get("rnn_hidden_size", 128),
+            rnn_num_layers=network_config.get("rnn_num_layers", 1),
+            sequence_length=network_config.get("sequence_length", 1),
+            # PER parameters
+            use_per=network_config.get("use_per", False),
+            per_alpha=network_config.get("per_alpha", 0.6),
+            per_beta_start=network_config.get("per_beta_start", 0.4),
+            per_beta_frames=network_config.get("per_beta_frames", 100000),
+            per_epsilon=network_config.get("per_epsilon", 1e-6)
+        )
+
+    elif algorithm_name.lower() == "td3_rnn":
+        network = TD3_RNN(
+            state_dim=train_envs.state_dim,
+            action_dim=train_envs.action_dim,
+            actor_linear_layers=network_config.get("actor_linear_layers", [128, 128, 128]),
+            critic_linear_layers=network_config.get("critic_linear_layers", [128, 128]),
+            device=device,
+            optimizer=network_config.get("optimizer", "adam"),
+            gamma=network_config["gamma"],
+            N_t=train_envs.BS_transmit_antennas,
+            K=train_envs.num_users,
+            P_max=train_envs.users_max_power,
+            actor_lr=network_config["actor_lr"],
+            critic_lr=network_config["critic_lr"],
+            tau=network_config.get('tau', 0.001),
+            critic_tau=network_config.get("critic_tau", 0.0001),
+            buffer_size=training_config.get("buffer_size"),
+            actor_frequency_update=network_config.get('actor_frequency_update', 1),
+            critic_frequency_update=network_config.get('critic_frequency_update', 1),
+            action_noise_scale=action_noise_scale,
+            # RNN parameters
+            rnn_type=network_config.get("rnn_type", "lstm"),
+            rnn_hidden_size=network_config.get("rnn_hidden_size", 128),
+            rnn_num_layers=network_config.get("rnn_num_layers", 1),
+            sequence_length=network_config.get("sequence_length", 1),
+            # PER parameters
+            use_per=network_config.get("use_per", True),
+            per_alpha=network_config.get("per_alpha", 0.6),
+            per_beta_start=network_config.get("per_beta_start", 0.4),
+            per_beta_frames=network_config.get("per_beta_frames", 100000),
+            per_epsilon=network_config.get("per_epsilon", 1e-6)
+        )
+    
+    elif algorithm_name.lower() == "sac_rnn":
+        network = SAC_RNN(
+            state_dim=train_envs.state_dim,
+            action_dim=train_envs.action_dim,
+            gamma=network_config["gamma"],
+            N_t=train_envs.BS_transmit_antennas,
+            K=train_envs.num_users,
+            P_max=train_envs.users_max_power,
+            actor_linear_layers=network_config.get("actor_linear_layers", [128, 128, 128]),
+            critic_linear_layers=network_config.get("critic_linear_layers", [128, 128]),
+            device=device,
+            optimizer=network_config.get("optimizer", "adam"),
+            actor_lr=network_config["actor_lr"],
+            critic_lr=network_config["critic_lr"],
+            tau=network_config.get('tau', 0.0001),
+            critic_tau=network_config.get("critic_tau", 0.0001),
+            buffer_size=training_config.get("buffer_size"),
+            actor_frequency_update=network_config.get('actor_frequency_update', 1),
+            critic_frequency_update=network_config.get('critic_frequency_update', 1),
+            action_noise_scale=action_noise_scale,
+            # RNN parameters
+            rnn_type=network_config.get("rnn_type", "lstm"),
+            rnn_hidden_size=network_config.get("rnn_hidden_size", 128),
+            rnn_num_layers=network_config.get("rnn_num_layers", 1),
+            sequence_length=network_config.get("sequence_length", 1),
+            # PER parameters
+            use_per=network_config.get("use_per", False),
+            per_alpha=network_config.get("per_alpha", 0.6),
+            per_beta_start=network_config.get("per_beta_start", 0.4),
+            per_beta_frames=network_config.get("per_beta_frames", 100000),
+            per_epsilon=network_config.get("per_epsilon", 1e-6)
+        )
 
     # ============================================================================
     # Configuration Logging and Setup
