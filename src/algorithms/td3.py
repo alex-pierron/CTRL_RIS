@@ -39,9 +39,6 @@ class ActorNetwork(nn.Module):
             ndarray: Batch of projected beamforming matrices of the same shape as raw_W.
         """
 
-        # Ensure float type
-        raw_W = raw_W.detach()
-
         # Frobenius norms for each matrix in the batch
         frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
 

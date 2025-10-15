@@ -135,7 +135,7 @@ class TD3_RNN:
             critic_linear_layers=critic_linear_layers, sequence_length=sequence_length
         ).to(self.device)
         
-        print(f"Optimized TD3 using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
+        print(f" TD3 using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
 
         # Initialize target networks
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -172,7 +172,7 @@ class TD3_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"Optimized TD3 RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
+                print(f" TD3 RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
             else:
                 self.replay_buffer = SequenceReplayBuffer(
                     buffer_size=buffer_size,
@@ -182,7 +182,7 @@ class TD3_RNN:
                     sequence_length=sequence_length,
                     episode_boundaries=True
                 )
-                print(f"Optimized TD3 RNN using Sequence Experience Replay (seq_len={sequence_length})")
+                print(f" TD3 RNN using Sequence Experience Replay (seq_len={sequence_length})")
         else:
             # Use standard buffers for single-step training (backward compatibility)
             if self.use_per:
@@ -196,7 +196,7 @@ class TD3_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f"Optimized TD3 using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+                print(f" TD3 using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
             else:
                 self.replay_buffer = ReplayBuffer(
                     buffer_size=buffer_size,
@@ -204,7 +204,7 @@ class TD3_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print("Optimized TD3 using standard Experience Replay")
+                print(" TD3 using standard Experience Replay")
 
     def select_action(self, state, hidden_states=None):
         """Selects an action based on the current state."""
@@ -266,7 +266,7 @@ class TD3_RNN:
         return td_errors.detach().cpu().numpy().flatten()
 
     def training(self, batch_size):
-        """Optimized training step with improved efficiency."""
+        """ training step with improved efficiency."""
         self.actor.train()
         self.total_it += 1
         
@@ -278,7 +278,7 @@ class TD3_RNN:
             # Standard buffer returns 6 values: states, actions, rewards, next_states, weights, indices
             state, actions, rewards, next_state, weights, indices = self._sample_from_buffer(batch_size)
         
-        # Optimized device transfer
+        #  device transfer
         if self.gpu_used:
             if self.sequence_length > 1:
                 state, actions, rewards, next_state, dones = (t.to(self.device, non_blocking=True) 
@@ -559,4 +559,4 @@ class TD3_RNN:
         config_path = os.path.join(directory, "config.pth")
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
-            print(f"Loaded Optimized TD3 RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
+            print(f"Loaded TD3 RNN model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")

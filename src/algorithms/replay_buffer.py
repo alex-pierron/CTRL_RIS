@@ -168,9 +168,9 @@ class SumTree:
     
     def add(self, priority, data_idx):
         """ add operation."""
-        tree_idx = self.data_pointer + self.capacity - 1
+        tree_idx = data_idx + self.capacity - 1
         self.data[self.data_pointer] = data_idx
-        self.update(tree_idx, priority)
+        self.update(data_idx, priority)
         self.data_pointer = (self.data_pointer + 1) % self.capacity
         if self.n_entries < self.capacity:
             self.n_entries += 1
@@ -336,7 +336,8 @@ class PrioritizedReplayBuffer:
             
             # Add to priority tree with maximum priority
             for i in range(batch_size):
-                self.tree.add(self.max_priority, self.pointer + i)
+                data_idx = (self.pointer + i) % self.buffer_size
+                self.tree.add(self.max_priority, data_idx)
             
             # Update pointer and size
             self.pointer = (self.pointer + batch_size) % self.buffer_size
@@ -394,8 +395,8 @@ class PrioritizedReplayBuffer:
             self.max_priority = max(self.max_priority, np.max(priorities))
             
             # Batch update in tree
-            tree_indices = indices + self.buffer_size - 1
-            self.tree.update_batch(tree_indices, priorities)
+            # indices are data indices; SumTree.update_batch expects data indices
+            self.tree.update_batch(indices, priorities)
 
     def new_episode(self):
         """Placeholder for episode boundary handling."""
@@ -775,7 +776,8 @@ class SequencePrioritizedReplayBuffer:
             
             # Add to priority tree with maximum priority
             for i in range(batch_size):
-                self.tree.add(self.max_priority, self.pointer + i)
+                data_idx = (self.pointer + i) % self.buffer_size
+                self.tree.add(self.max_priority, data_idx)
             
             # Track episode boundaries
             for i in range(batch_size):
@@ -922,8 +924,8 @@ class SequencePrioritizedReplayBuffer:
             self.max_priority = max(self.max_priority, np.max(priorities))
             
             # Batch update in tree
-            tree_indices = indices + self.buffer_size - 1
-            self.tree.update_batch(tree_indices, priorities)
+            # indices are data indices; SumTree.update_batch expects data indices
+            self.tree.update_batch(indices, priorities)
 
     def new_episode(self):
         """Mark episode boundary."""

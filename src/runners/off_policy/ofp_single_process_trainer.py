@@ -158,7 +158,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     plot_saving_frequency = training_config.get("plot_save_checkpoint_frequency", 100)
 
     # Curriculum learning enables progressive difficulty adjustment
-    curriculum_learning = training_config.get("Curriculum_Learning", True)
+    curriculum_learning = training_config.get("Curriculum_Learning", False)
     
     # Action noise configuration for exploration
     noise_scale = training_config.get("noise_scale", 0.1)
