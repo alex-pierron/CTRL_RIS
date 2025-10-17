@@ -201,26 +201,36 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     # Calculate all indices except k
     indices_except_k = np.arange(K)[np.arange(K) != k]
     
-    # First term: Inter-user interference
-    inter_user_interference_term = 0
-    for indice in indices_except_k:
-        #inter_user_interference_term += np.abs(H_RIS_Users[k].conj() @ Theta_Phi @ H_BS_RIS @ W[:, indice])**2
-        #pass
-        inter_user_interference_term += np.abs(np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W[:, indice].reshape(-1, 1))**2
+    # First term: Inter-user interference - VECTORIZED
+    if len(indices_except_k) > 0:
+        # Vectorized computation for all interfering users at once
+        W_except_k = W[:, indices_except_k]  # Shape: (N_t, K-1)
+        interference_matrix = np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W_except_k
+        inter_user_interference_term = np.sum(np.abs(interference_matrix)**2)
+    else:
+        inter_user_interference_term = 0
 
-    # Third term: User-induced interference
+    # Third term: User-induced interference - VECTORIZED
     # For all users except k
-    user_interference_not_k = 0
-    for indice in indices_except_k:
-        user_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS[indice]
-        user_interference_not_k += (1 + kappa_B_u_i) * rho * P_users[indice] * np.abs(user_channel)**2
+    if len(indices_except_k) > 0:
+        # Vectorized computation for user interference
+        H_Users_RIS_except_k = H_Users_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+        P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+        
+        # Compute all user channels at once - FIXED DIMENSIONS
+        # H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T
+        # H_Users_RIS[k].T: (1, M), Theta_Phi: (M, M), H_Users_RIS_except_k.squeeze(axis=2).T: (M, K-1)
+        user_channels = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+        user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
+    else:
+        user_interference_not_k = 0
     
     # For user k
     user_k_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
     user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
     
     # Total user interference
-    user_interference_term = user_interference_not_k  + user_interference_k 
+    user_interference_term = user_interference_not_k + user_interference_k 
 
     # Second term: Distortion noise caused by BS
     diag_matrix = np.diag(np.diag(WWH)).real
@@ -244,14 +254,26 @@ def Gamma_S_k(K, k, Theta_Phi,
     # Projected signal for all users through RIS and combining vector
     indices_except_k = np.arange(K)[np.arange(K) != k]
 
-    # First term: interference from other users (i ≠ k)
-    interference_other_user = 0
-    for indice in indices_except_k:
-        interference_other_user += np.squeeze(P_users[indice] * np.absolute(np.sqrt(gains_transmitter_ris_receiver[indice]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[indice]) ** 2) # inter user interference term
-        # ? removing the .conj() in the first f_u_k above and in H_RIS_BS
+    # First term: interference from other users (i ≠ k) - VECTORIZED
+    if len(indices_except_k) > 0:
+        # Vectorized computation for all interfering users
+        H_User_RIS_except_k = H_User_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+        P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+        gains_except_k = gains_transmitter_ris_receiver[indices_except_k]  # Shape: (K-1,)
+        
+        # Compute all interference terms at once - FIXED DIMENSIONS
+        # f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS_except_k.squeeze(axis=2).T
+        # f_u_k.T: (1, N_r), H_RIS_BS: (N_r, M), Theta_Phi: (M, M), H_User_RIS_except_k.squeeze(axis=2).T: (M, K-1)
+        channel_products = f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+        interference_terms = P_users_except_k * np.abs(np.sqrt(gains_except_k) * channel_products)**2
+        interference_other_user = np.sum(interference_terms)
+    else:
+        interference_other_user = 0
+        
     # Second term: distortion noise caused by all users
     # TODO add support for specific kappa_B_u_i for each user i. Currently same value is used for everyone.
-    distortion_noise = kappa_B_u_i * ( interference_other_user + np.squeeze(P_users[k] * np.absolute(np.sqrt(gains_transmitter_ris_receiver[k]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[k]) ** 2) )
+    user_k_signal = np.squeeze(P_users[k] * np.abs(np.sqrt(gains_transmitter_ris_receiver[k]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[k])**2)
+    distortion_noise = kappa_B_u_i * (interference_other_user + user_k_signal)
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
     # ? removing the .conj() in the first f_u_k above and in H_RIS_BS
 

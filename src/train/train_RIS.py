@@ -71,10 +71,14 @@ def main(args: list) -> None:
     algorithm_name = network_config.get("algorithm", "ddpg")
     experiment_name = f"env_seed{env_seed}_{timestamp}"
     n_rollout_train = training_config.get("n_rollout_threads", 1)
+
+    # Creating a dedicated folder for the data in case the code is run in the debugging mode
     if debugging:
         log_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) +"/data" + "/debugging") / algorithm_name / experiment_name
         if not log_dir.exists():
             os.makedirs(str(log_dir))
+    
+    # Classic data registration to ensure easy archiving.
     else:
         log_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) +"/data" + "/raw") \
         / env_name / config_file_name / algorithm_name / experiment_name
@@ -85,7 +89,7 @@ def main(args: list) -> None:
 
     # Initialize logging and device configuration
     logs_terminal_txt_file = f"{log_dir}/log.txt"
-    noise_activated = False
+
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # choosing the device
     cuda_available = torch.cuda.is_available()
@@ -154,7 +158,12 @@ def main(args: list) -> None:
             buffer_size=training_config.get("buffer_size"),
             actor_frequency_update=network_config.get('actor_frequency_update', 1),
             critic_frequency_update=network_config.get('critic_frequency_update', 1),
-            action_noise_scale=action_noise_scale
+            action_noise_scale=action_noise_scale,
+            use_per = network_config.get("use_per",False),
+            per_alpha= network_config.get("per_alpha",0.6),
+            per_beta_start = network_config.get("per_beta_start", 0.4),
+            per_beta_frames = network_config.get("per_beta_frames ", 100000),
+            per_epsilon = network_config.get("per_beta_frames ", 1e-6),
         )
     
     elif algorithm_name.lower() == "custom_ddpg":
@@ -173,6 +182,11 @@ def main(args: list) -> None:
                               actor_frequency_update = network_config.get('actor_frequency_update',1),
                               critic_frequency_update = network_config.get('critic_frequency_update',1),
                               action_noise_scale  = action_noise_scale,
+                              use_per = network_config.get("use_per",False),
+                              per_alpha= network_config.get("per_alpha",0.6),
+                              per_beta_start = network_config.get("per_beta_start", 0.4),
+                              per_beta_frames = network_config.get("per_beta_frames ", 100000),
+                              per_epsilon = network_config.get("per_beta_frames ", 1e-6),
                               )
         
     elif algorithm_name.lower() == "td3":
@@ -191,7 +205,7 @@ def main(args: list) -> None:
                       actor_frequency_update = network_config.get('actor_frequency_update',1),
                       critic_frequency_update = network_config.get('critic_frequency_update',1),
                       action_noise_scale  = action_noise_scale,
-                      use_per = network_config.get("user_per",True),
+                      use_per = network_config.get("use_per",False),
                       per_alpha= network_config.get("per_alpha",0.6),
                       per_beta_start = network_config.get("per_beta_start", 0.4),
                       per_beta_frames = network_config.get("per_beta_frames ", 100000),
@@ -212,7 +226,7 @@ def main(args: list) -> None:
                               buffer_size = training_config.get("buffer_size"),
                               actor_frequency_update = network_config.get('actor_frequency_update',1),
                               critic_frequency_update = network_config.get('critic_frequency_update',1),
-                              use_per = network_config.get("user_per",False),
+                              use_per = network_config.get("use_per",False),
                               per_alpha = network_config.get("per_alpha",0.6),
                               per_beta_start = network_config.get("per_beta_start", 0.4),
                               per_beta_frames = network_config.get("per_beta_frames ", 100000),
@@ -376,7 +390,13 @@ def main(args: list) -> None:
     write_line_to_file(logs_terminal_txt_file, f"\nTimestamp: {timestamp}\n")
 
     config_dict = config.__dict__
-    print(f"\n Configuration: {config.__dict__}\n")
+    print("\nConfiguration:")
+    print("=" * 50)
+    for key, value in config_dict.items():
+        # Skip internal Python attributes
+        if not key.startswith('__'):
+            print(f"\n{key}: {value}")
+    print("\n" + "=" * 50)
 
     # Format configuration details for logging
     log_message = "=" * 60 + "\n"

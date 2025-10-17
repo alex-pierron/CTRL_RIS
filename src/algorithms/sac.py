@@ -332,7 +332,7 @@ class SAC:
                 beta_frames=per_beta_frames,
                 epsilon=per_epsilon
             )
-            print(f"Using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start}) \n")
+            print(f"\n SAC using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start}) ")
         else:
             # Assuming ReplayBuffer is your original implementation
             self.replay_buffer = ReplayBuffer(
@@ -341,7 +341,7 @@ class SAC:
                 action_dim=action_dim,
                 numpy_rng=self.network_numpy_rng
             )
-            print("Using standard Experience Replay")
+            print(f"\n SAC using Standard Experience Replay")
 
     def select_action(self, state, eval_mode=False):
         """

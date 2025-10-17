@@ -204,7 +204,7 @@ class TD3_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print(" TD3 using standard Experience Replay")
+                print(" TD3 using Standard Experience Replay")
 
     def select_action(self, state, hidden_states=None):
         """Selects an action based on the current state."""

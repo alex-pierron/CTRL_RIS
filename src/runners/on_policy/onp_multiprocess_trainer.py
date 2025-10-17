@@ -184,7 +184,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         buffer_number_of_required_episode = 1
 
     # === Main training loop over episodes ===
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=1, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         
         current_optim_steps_ep = 0
 
@@ -405,34 +411,54 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         
         best_basic_reward_per_env = np.max(basic_reward_episode,axis=0)
 
-        message = (
+        # Create console message for episode summary (with emojis)
+        console_message = (
             f"\n\n"
-            f"====================================================================================================\n"
-            f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps} |\n"
-            f"====================================================================================================\n"
-            f"| POSITIONING: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Positions of UEs for Each Subprocess: {user_positions}\n"
-            f"| \n"
-            f"| REWARDS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average Reward: {avg_reward:.4f} | Max Instant Reward: {np.max(instant_user_rewards):.4f} |\n"
-            f"| Best Reward Obtained per Subprocess: {episode_max_instant_reward_reached_per_env}\n"
-            f"| --> Average Basic Reward: {average_basic_reward_all_envs:.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_for_best_env:.4f} |\n"
-            f"| Best Basic Reward Obtained per Subprocess: {best_basic_reward_per_env}\n"
-            f"| \n"
-            f"| FAIRNESS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average User Fairness: {avg_user_fairness_all_envs:.4f} | User Fairness for Maximum Instant Reward: {fairness_for_best_reward:.4f} |\n"
-            f"| \n"
-            f"| OTHERS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-            f"====================================================================================================\n"
+            f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+            f"║ 🎯 ON-POLICY TRAINING EPISODE #{episode - index_episode_buffer_filled:3d} │ 🧠 Optimizations: {optim_steps:4d} ║\n"
+            f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+            f"║ 📍 POSITIONING:\n"
+            f"║    User Equipment Positions: {user_positions}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 🏆 REWARDS:\n"
+            f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"║    • Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"║    • Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} │ Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"║    • Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ ⚖️  FAIRNESS:\n"
+            f"║    • Average Fairness: {avg_user_fairness_all_envs:8.4f} │ Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 📊 PERFORMANCE:\n"
+            f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
+        # Create ASCII version for file logging
+        log_message = (
+            f"\n+====================================================================================================+\n"
+            f"| [TRAIN] ON-POLICY EPISODE #{episode - index_episode_buffer_filled:3d} | Optimizations: {optim_steps:4d} |\n"
+            f"+====================================================================================================+\n"
+            f"| POSITIONING:\n"
+            f"|    User Equipment Positions: {user_positions}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| REWARDS:\n"
+            f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"|    * Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"|    * Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} | Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"|    * Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| FAIRNESS:\n"
+            f"|    * Average Fairness: {avg_user_fairness_all_envs:8.4f} | Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| PERFORMANCE:\n"
+            f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"+====================================================================================================+\n"
+        )
 
-        logger.verbose(message)
+        # Display beautiful console message and log ASCII version to file
+        tqdm.write(console_message)
+        logger.verbose(log_message)
 
         writer.add_scalar("Actor Loss/Average actor Loss per episode", avg_actor_loss, episode)
         writer.add_scalar("Critic Loss/Average critic Loss per episode", avg_critic_loss, episode)
@@ -465,10 +491,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         if using_eavesdropper:
             avg_eavesdropper_reward = np.mean(instant_eavesdropper_rewards)
             writer.add_scalar("Eavesdropper/Average reward per episode", avg_eavesdropper_reward, episode)
-        
-        # Update the progress bar description with the last ending message
-        if buffer_filled:
-            tqdm.write(message)
 
     #*  CONDUCT EVALUATION IF SPECIFIED
 
@@ -504,7 +526,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
             # Loop over evaluation episodes
             # NOTE: Loop over evaluation episodes
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=2, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
 
                 eval_env.reset()
 

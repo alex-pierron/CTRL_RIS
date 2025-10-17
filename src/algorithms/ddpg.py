@@ -307,7 +307,7 @@ class DDPG:
                 beta_frames=per_beta_frames,
                 epsilon=per_epsilon
             )
-            print(f"\n DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+            print(f"DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
         else:
             self.replay_buffer = ReplayBuffer(
                 buffer_size=buffer_size,
@@ -315,7 +315,7 @@ class DDPG:
                 action_dim=action_dim,
                 numpy_rng=self.network_numpy_rng
             )
-            print("\n DDPG using standard Experience Replay")
+            print("DDPG using Standard Experience Replay")
         
     def _sample_from_buffer(self, batch_size):
         """

@@ -231,8 +231,14 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     
     # Initialize progress bar for replay buffer warmup phase
     filling_buffer_progress_bar = (
-        tqdm(total=buffer_number_of_required_episode, desc="FILLING REPLAY BUFFER", 
-             position=0, ascii="->#", leave=True) 
+        tqdm(total=buffer_number_of_required_episode, 
+             desc="[BUFFER] FILLING REPLAY BUFFER", 
+             position=0, 
+             bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+             ncols=140,
+             colour='blue',
+             ascii="▏▎▍▌▋▊▉█",
+             leave=True) 
         if not batch_instead_of_buff else None
     )
     
@@ -240,7 +246,13 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     # ========================================================================
     # MAIN TRAINING LOOP
     # ========================================================================
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=2, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         
         # Reset episode-level optimization counters
         optim_steps_actor_ep = 0
@@ -431,30 +443,53 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                                             instant_eavesdropper_rewards[:, num_step + 1 - frequency_information: num_step], 
                                             current_step)
                     
-                    # Create detailed training progress message
-                    message = (
+                    # Create detailed training progress message for console (with emojis)
+                    console_message = (
                         f"\n"
-                        f"================================================================================\n"
-                        f" TRAINING EPISODE {episode - index_episode_buffer_filled} | STEP {num_step + 1} \n"
-                        f" Training the Actor NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
-                        f"================================================================================\n"
-                        f"| ~ POSITIONING: Positions of UEs: {user_positions}\n"
-                        f"|--------------------------------------------------------------------------------|\n"
-                        f"| ~ REWARDS: \n"
-                        f"|     - Local Avg Reward: {np.float16(local_average_reward):.4f} | Max Instant Reward: {max_instant_reward:.4f} |\n"
-                        f"|     - Max Instant Reward per Subprocess: {np.max(instant_user_rewards, axis=1)} |\n"
-                        f"|     - Local Avg Reward per Subprocess: {local_average_reward_per_env} |\n"
-                        f"|--------------------------------------------------------------------------------|\n"
-                        f"| ~ FAIRNESS: \n"
-                        f"|     - Local User Fairness (All Subprocesses): {user_fairness_mean_local:.4f} |\n"
-                        f"|     - Local User Fairness per Subprocess: {user_fairness_mean_local_per_env} |\n"
-                        f"|--------------------------------------------------------------------------------|\n"
-                        f"| LOSSES: Avg Actor Loss: {current_avg_actor_loss:.4f} | Avg Critic Loss: {current_avg_critic_loss:.4f} |\n"
-                        f"================================================================================\n"
+                        f"╔════════════════════════════════════════════════════════════════════════════════╗\n"
+                        f"║ 🎯 TRAINING EPISODE {episode - index_episode_buffer_filled:3d} │ STEP {num_step + 1:5d} │ ⏱️  {np.mean(step_time_list):.4f}s/step ║\n"
+                        f"╠════════════════════════════════════════════════════════════════════════════════╣\n"
+                        f"║ 📍 POSITIONING: UEs at {user_positions}\n"
+                        f"║ ──────────────────────────────────────────────────────────────────────────────── ║\n"
+                        f"║ 🏆 REWARDS:\n"
+                        f"║    • Local Avg: {np.float16(local_average_reward):8.4f} │ Max Instant: {max_instant_reward:8.4f}\n"
+                        f"║    • Max per Env: {np.max(instant_user_rewards, axis=1)}\n"
+                        f"║    • Avg per Env: {local_average_reward_per_env}\n"
+                        f"║ ──────────────────────────────────────────────────────────────────────────────── ║\n"
+                        f"║ ⚖️  FAIRNESS:\n"
+                        f"║    • Global Fairness: {user_fairness_mean_local:8.4f}\n"
+                        f"║    • Per Environment: {user_fairness_mean_local_per_env}\n"
+                        f"║ ──────────────────────────────────────────────────────────────────────────────── ║\n"
+                        f"║ 📉 LOSSES: Actor: {current_avg_actor_loss:8.4f} │ Critic: {current_avg_critic_loss:8.4f}\n"
+                        f"╚════════════════════════════════════════════════════════════════════════════════╝\n"
                     )
                     
-                    # Log detailed training information to file
-                    logger.verbose(message)
+                    # Create ASCII version for file logging
+                    log_message = (
+                        f"\n"
+                        f"+================================================================================+\n"
+                        f"| [TRAIN] EPISODE {episode - index_episode_buffer_filled:3d} | STEP {num_step + 1:5d} | TIME: {np.mean(step_time_list):.4f}s/step |\n"
+                        f"+================================================================================+\n"
+                        f"| POSITIONING: UEs at {user_positions}\n"
+                        f"| -------------------------------------------------------------------------------- |\n"
+                        f"| REWARDS:\n"
+                        f"|    * Local Avg: {np.float16(local_average_reward):8.4f} | Max Instant: {max_instant_reward:8.4f}\n"
+                        f"|    * Max per Env: {np.max(instant_user_rewards, axis=1)}\n"
+                        f"|    * Avg per Env: {local_average_reward_per_env}\n"
+                        f"| -------------------------------------------------------------------------------- |\n"
+                        f"| FAIRNESS:\n"
+                        f"|    * Global Fairness: {user_fairness_mean_local:8.4f}\n"
+                        f"|    * Per Environment: {user_fairness_mean_local_per_env}\n"
+                        f"| -------------------------------------------------------------------------------- |\n"
+                        f"| LOSSES: Actor: {current_avg_actor_loss:8.4f} | Critic: {current_avg_critic_loss:8.4f}\n"
+                        f"+================================================================================+\n"
+                    )
+                    
+                    # Display beautiful console message
+                    tqdm.write(console_message)
+                    
+                    # Log ASCII version to file
+                    logger.verbose(log_message)
 
         # Update global optimization step counters
         optim_steps_actor += optim_steps_actor_ep
@@ -547,35 +582,57 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         ]
         best_basic_reward_per_env = np.max(basic_reward_episode, axis=0)
 
-        # Create comprehensive episode summary message
-        message = (
+        # Create comprehensive episode summary message for console (with emojis)
+        console_message = (
             f"\n\n"
-            f"====================================================================================================\n"
-            f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed on the Actor: {optim_steps_actor} |\n"
-            f"====================================================================================================\n"
-            f"| POSITIONING: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Positions of UEs for Each Subprocess: {user_positions}\n"
-            f"| \n"
-            f"| REWARDS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average Reward: {avg_reward:.4f} | Max Instant Reward: {np.max(instant_user_rewards):.4f} |\n"
-            f"| Best Reward Obtained per Subprocess: {episode_max_instant_reward_reached_per_env}\n"
-            f"| --> Average Basic Reward: {average_basic_reward_all_envs:.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_for_best_env:.4f} |\n"
-            f"| Best Basic Reward Obtained per Subprocess: {best_basic_reward_per_env}\n"
-            f"| \n"
-            f"| FAIRNESS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average User Fairness: {avg_user_fairness_all_envs:.4f} | User Fairness for Maximum Instant Reward: {fairness_for_best_reward:.4f} |\n"
-            f"| \n"
-            f"| OTHERS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-            f"====================================================================================================\n"
+            f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+            f"║ 🎯 TRAINING EPISODE #{episode - index_episode_buffer_filled:3d} │ 🧠 Actor Optimizations: {optim_steps_actor:4d} ║\n"
+            f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+            f"║ 📍 POSITIONING:\n"
+            f"║    User Equipment Positions: {user_positions}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 🏆 REWARDS:\n"
+            f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"║    • Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"║    • Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} │ Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"║    • Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ ⚖️  FAIRNESS:\n"
+            f"║    • Average Fairness: {avg_user_fairness_all_envs:8.4f} │ Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 📊 PERFORMANCE:\n"
+            f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
-        # Log detailed episode summary to file
-        logger.verbose(message)
+        # Create ASCII version for file logging
+        log_message = (
+            f"\n\n"
+            f"+====================================================================================================+\n"
+            f"| [TRAIN] EPISODE #{episode - index_episode_buffer_filled:3d} | Actor Optimizations: {optim_steps_actor:4d} |\n"
+            f"+====================================================================================================+\n"
+            f"| POSITIONING:\n"
+            f"|    User Equipment Positions: {user_positions}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| REWARDS:\n"
+            f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"|    * Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"|    * Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} | Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"|    * Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| FAIRNESS:\n"
+            f"|    * Average Fairness: {avg_user_fairness_all_envs:8.4f} | Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| PERFORMANCE:\n"
+            f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"+====================================================================================================+\n"
+        )
+
+        # Display beautiful console message
+        tqdm.write(console_message)
+        
+        # Log ASCII version to file
+        logger.verbose(log_message)
 
         # Log episode-level metrics to TensorBoard
         writer.add_scalar("Actor Loss/Average actor Loss per episode", avg_actor_loss, episode)
@@ -627,7 +684,6 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         if buffer_filled:
             writer.add_scalar("Replay Buffer/Average reward stored", 
                              np.mean(network.replay_buffer.reward_buffer), current_step)
-            tqdm.write(message)
 
     # ========================================================================
     # EVALUATION PHASE
@@ -635,7 +691,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
         # Conduct periodic evaluation if specified and buffer is filled
         if conduct_eval and episode % eval_period == 0 and buffer_filled:
-            tqdm.write(f" \n Conducting Evaluation \n")
+            tqdm.write(f"\n🔍 CONDUCTING EVALUATION...\n")
         
             # TODO: Implement rendering functionality for evaluation visualization
             # if use_rendering:
@@ -669,18 +725,30 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             # ====================================================================
             # EVALUATION EPISODE LOOP
             # ====================================================================
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=3, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
 
                 # Reset evaluation environment for new episode
                 eval_env.reset()
 
                 # Log starting positions for evaluation episode
-                message = (
-                    f"\nStarting positions for EVAL episode {eval_episode}:\n"
-                    f"Users: {eval_env.get_users_positions()}\n"
-                    f"Eavesdroppers: {eval_env.get_eavesdroppers_positions()}\n"
+                console_message = (
+                    f"\n📍 EVAL Episode {eval_episode} Starting Positions:\n"
+                    f"   👥 Users: {eval_env.get_users_positions()}\n"
+                    f"   👁️  Eavesdroppers: {eval_env.get_eavesdroppers_positions()}\n"
                 )
-                logger.verbose(message)
+                log_message = (
+                    f"\n[EVAL] Episode {eval_episode} Starting Positions:\n"
+                    f"   Users: {eval_env.get_users_positions()}\n"
+                    f"   Eavesdroppers: {eval_env.get_eavesdroppers_positions()}\n"
+                )
+                tqdm.write(console_message)
+                logger.verbose(log_message)
                 
                 # Initialize evaluation episode tracking arrays
                 eval_instant_user_jain_fairness = np.zeros((max_num_step_per_episode + 1, n_eval_rollout_threads))
@@ -765,22 +833,46 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             writer.add_scalar("Evaluation/Max reward reached per episode", mean_max_reward, episode)
             writer.add_scalar("Evaluation/Total Reward per episode", mean_reward, episode)
 
-            # Create and log evaluation summary message
+            # Create evaluation summary message for console (with emojis)
             if using_eavesdropper:
-                message = (
-                    f"\n[EVAL PERIOD {num_eval_periode}] "
-                    f"Avg Reward: {mean_reward:.4f}, Max Reward: {mean_max_reward:.4f},\n"
-                    f"Fairness for Max Reward: {mean_best_fairness:.4f}, Avg Fairness: {mean_fairness:.4f},\n"
-                    f"Eavesdropper Reward: {mean_eaves_reward:.4f}, Reward/Eavesdropper Ratio: {mean_ratio:.4f},\n"
-                    f"Composite Score: {mean_composite_score:.4f}\n"
+                console_message = (
+                    f"\n╔══════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+                    f"║ 📊 EVALUATION PERIOD #{num_eval_periode:2d} ║\n"
+                    f"╠══════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+                    f"║ 🏆 REWARDS: Avg: {mean_reward:8.4f} │ Max: {mean_max_reward:8.4f}\n"
+                    f"║ ⚖️  FAIRNESS: Best: {mean_best_fairness:8.4f} │ Avg: {mean_fairness:8.4f}\n"
+                    f"║ 👁️  EAVESDROPPER: Reward: {mean_eaves_reward:8.4f} │ Ratio: {mean_ratio:8.4f}\n"
+                    f"║ 🎯 COMPOSITE SCORE: {mean_composite_score:8.4f}\n"
+                    f"╚══════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+                )
+                log_message = (
+                    f"\n+====================================================================================================+\n"
+                    f"| [EVAL] PERIOD #{num_eval_periode:2d} |\n"
+                    f"+====================================================================================================+\n"
+                    f"| REWARDS: Avg: {mean_reward:8.4f} | Max: {mean_max_reward:8.4f}\n"
+                    f"| FAIRNESS: Best: {mean_best_fairness:8.4f} | Avg: {mean_fairness:8.4f}\n"
+                    f"| EAVESDROPPER: Reward: {mean_eaves_reward:8.4f} | Ratio: {mean_ratio:8.4f}\n"
+                    f"| COMPOSITE SCORE: {mean_composite_score:8.4f}\n"
+                    f"+====================================================================================================+\n"
                 )
             else:
-                message = (
-                    f"\n[EVAL PERIOD {num_eval_periode}] "
-                    f"Avg Reward: {mean_reward:.4f}, Max Reward: {mean_max_reward:.4f},\n"
-                    f"Fairness for Max Reward: {mean_best_fairness:.4f}, Avg Fairness: {mean_fairness:.4f},\n"
+                console_message = (
+                    f"\n╔══════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+                    f"║ 📊 EVALUATION PERIOD #{num_eval_periode:2d} ║\n"
+                    f"╠══════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+                    f"║ 🏆 REWARDS: Avg: {mean_reward:8.4f} │ Max: {mean_max_reward:8.4f}\n"
+                    f"║ ⚖️  FAIRNESS: Best: {mean_best_fairness:8.4f} │ Avg: {mean_fairness:8.4f}\n"
+                    f"╚══════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+                )
+                log_message = (
+                    f"\n+====================================================================================================+\n"
+                    f"| [EVAL] PERIOD #{num_eval_periode:2d} |\n"
+                    f"+====================================================================================================+\n"
+                    f"| REWARDS: Avg: {mean_reward:8.4f} | Max: {mean_max_reward:8.4f}\n"
+                    f"| FAIRNESS: Best: {mean_best_fairness:8.4f} | Avg: {mean_fairness:8.4f}\n"
+                    f"+====================================================================================================+\n"
                 )
                 
-            # Log evaluation summary to file and display in console
-            logger.verbose(message)
-            tqdm.write(message)
+            # Display beautiful console message and log ASCII version to file
+            tqdm.write(console_message)
+            logger.verbose(log_message)

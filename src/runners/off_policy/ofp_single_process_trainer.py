@@ -236,9 +236,12 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     filling_buffer_progress_bar = (
         tqdm(
             total=buffer_number_of_required_episode,
-            desc="FILLING REPLAY BUFFER",
+            desc="[BUFFER] FILLING REPLAY BUFFER",
             position=0,
-            ascii="->#",
+            bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+            ncols=140,
+            colour='blue',
+            ascii="▏▎▍▌▋▊▉█",
             leave=True
         ) if not batch_instead_of_buff else None
     )
@@ -246,7 +249,13 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     # ========================================================================
     # MAIN TRAINING LOOP
     # ========================================================================
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=2, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         # Record episode start time for performance tracking
         start_episode_time = time.time()
         
@@ -758,38 +767,47 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                     )
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
 
-            # Create console message for episode summary
+            # Create console message for episode summary (with emojis)
             console_message = (
-                f"\n\n !!~ TRAINING EPISODE No {episode - index_episode_buffer_filled} | Optimization Steps Performed on Actor: {optim_steps_actor}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f"   ~ ~ REWARDS:\n"
-                f"     |--> Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
-                f"     |--> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
-                f"     |--> Detailed Basic Reward for Best Case: {additional_information_best_case}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f"  ~ ~ FAIRNESS:\n"
-                f"     |--> Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f"  ~ ~ OTHERS:\n"
-                f"     |--> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f}\n\n"
+                f"\n\n"
+                f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+                f"║ 🎯 TRAINING EPISODE #{episode - index_episode_buffer_filled:3d} │ 🧠 Actor Optimizations: {optim_steps_actor:4d} ║\n"
+                f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+                f"║ 📍 POSITIONING:\n"
+                f"║    User Equipment Positions: {users_position}\n"
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 🏆 REWARDS:\n"
+                f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
+                f"║    • Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} │ Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)]:8.4f}\n"
+                f"║    • Detailed Baseline Reward: {additional_information_best_case}\n"
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ ⚖️  FAIRNESS:\n"
+                f"║    • Average Fairness: {avg_fairness:8.4f} │ Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:8.4f}\n"
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 📊 PERFORMANCE:\n"
+                f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
+                f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
             )
 
-            # Create detailed log message for file storage
+            # Create ASCII version for file logging
             log_message = (
-                f"\n+{'=' * 100}+\n"
-                f"| !~ TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed On actor: {optim_steps_actor} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  ~ ~ REWARDS: |\n"
-                f"|     --> Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"
-                f"|     --> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f} |\n"
-                f"|     --> Detailed Basic Reward for Best Case: {additional_information_best_case} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  ~ ~ FAIRNESS: |\n"
-                f"|     --> Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  ~ ~ OTHERS: |\n"
-                f"|     --> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-                f"+{'=' * 100}+\n"
+                f"\n+====================================================================================================+\n"
+                f"| [TRAIN] EPISODE #{episode - index_episode_buffer_filled:3d} | Actor Optimizations: {optim_steps_actor:4d} |\n"
+                f"+====================================================================================================+\n"
+                f"| POSITIONING:\n"
+                f"|    User Equipment Positions: {users_position}\n"
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| REWARDS:\n"
+                f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
+                f"|    * Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} | Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)]:8.4f}\n"
+                f"|    * Detailed Baseline Reward: {additional_information_best_case}\n"
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| FAIRNESS:\n"
+                f"|    * Average Fairness: {avg_fairness:8.4f} | Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:8.4f}\n"
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| PERFORMANCE:\n"
+                f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
+                f"+====================================================================================================+\n"
             )
 
             # Display console message and log to file
@@ -804,7 +822,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                 f"--------------------------------------------------------------------------------\n"
                 f" REWARDS:\n"
                 f"    Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
-                f"    Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
+                f"    Average Baseline Reward: {np.mean(basic_reward_episode):.4f} | Baseline Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
                 f"--------------------------------------------------------------------------------\n"
                 f" FAIRNESS:\n"
                 f"    Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f}\n"
@@ -820,7 +838,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                 f"+{'=' * 100}+\n"
                 f"|  REWARDS: |\n"
                 f"|     Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"
-                f"|     Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f} |\n"
+                f"|     Average Baseline Reward: {np.mean(basic_reward_episode):.4f} | Baseline Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f} |\n"
                 f"+{'=' * 100}+\n"
                 f"|  FAIRNESS: |\n"
                 f"|     Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f} |\n"
@@ -914,7 +932,13 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             # ====================================================================
             # EVALUATION EPISODE LOOP
             # ====================================================================
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=3, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
 
                 # Reset evaluation environment for new episode
                 eval_env.reset()

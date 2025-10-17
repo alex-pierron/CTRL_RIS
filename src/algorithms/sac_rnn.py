@@ -200,7 +200,7 @@ class SAC_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print(" SAC using standard Experience Replay")
+                print(" SAC using Standard Experience Replay")
 
         # Initialize entropy tuning
         self.automatic_entropy_tuning = automatic_entropy_tuning

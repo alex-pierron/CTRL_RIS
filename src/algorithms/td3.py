@@ -199,7 +199,7 @@ class TD3:
                  action_noise_scale:float  = 0,
                  using_loss_scaling: bool = False,
                  # PER parameters
-                 use_per: bool = True,
+                 use_per: bool = False,
                  per_alpha: float = 0.6,
                  per_beta_start: float = 0.4,
                  per_beta_frames: int = 100000,
@@ -296,7 +296,7 @@ class TD3:
                 beta_frames=per_beta_frames,
                 epsilon=per_epsilon
             )
-            print(f"TD3 using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+            print(f" TD3 using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
         else:
             self.replay_buffer = ReplayBuffer(
                 buffer_size=buffer_size,
@@ -304,7 +304,7 @@ class TD3:
                 action_dim=action_dim,
                 numpy_rng=self.network_numpy_rng
             )
-            print("TD3 using standard Experience Replay")
+            print(" TD3 using Standard Experience Replay")
 
     def select_action(self, state):
         """

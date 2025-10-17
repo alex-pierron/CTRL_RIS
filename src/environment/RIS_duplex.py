@@ -417,6 +417,19 @@ class RIS_Duplex(gym.Env):
         self._num_episode = 0
         self._num_step = 0
         self.previous_rate_part = np.zeros(self.previous_rate_dim)
+        
+        # =====================================================================
+        # Performance optimization caches
+        # =====================================================================
+        self._channel_cache = {}
+        self._last_user_positions = None
+        self._last_eaves_positions = None
+        self._cached_gains = None
+        self._cached_matrix_products = {}
+        self._last_theta_phi = None
+        self._last_W = None
+        self._cached_sinr = {}
+        self._sinr_cache_valid = False
 
         self.test = 0
 
@@ -772,6 +785,7 @@ class RIS_Duplex(gym.Env):
         self.compute_WWH()
         self.compute_all_channels()
 
+        # Compute decoding matrix after all channels are available
         self.compute_decoding_matrix()
 
     def _initialize_state(self):
@@ -792,6 +806,116 @@ class RIS_Duplex(gym.Env):
         self.WWH = self._W @ self._W.conj().T
         self.diag_matrix_WWH = np.diag(np.diag(self.WWH)).real
         pass
+    
+    def _cache_matrix_products(self):
+        """Cache expensive matrix products used in state building."""
+        # Check if matrices have changed
+        theta_phi_changed = (self._last_theta_phi is None or 
+                            not np.array_equal(self._last_theta_phi, self._Theta_Phi))
+        W_changed = (self._last_W is None or 
+                    not np.array_equal(self._last_W, self._W))
+        
+        if theta_phi_changed or W_changed:
+            # Cache BS-RIS-LU channel products
+            h_d = self._channel_matrices["H_RIS_Users"].squeeze(axis=1)  # Shape: (K,M)
+            self._cached_matrix_products["G_1D"] = h_d @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
+            
+            # Cache LU-RIS-BS channel products  
+            h_u = self._channel_matrices["H_Users_RIS"].squeeze(axis=2).T  # Shape: (M, K)
+            self._cached_matrix_products["LU_BS_RIS"] = self._channel_matrices["H_RIS_BS"] @ self._Theta_Phi @ h_u
+            
+            # Cache eavesdropper products if active
+            if self.eavesdropper_active:
+                G_2D = self._channel_matrices["H_RIS_Eaves_downlink"].squeeze(axis=1)  # Shape: (L, M)
+                self._cached_matrix_products["BS_RIS_EAVES"] = G_2D @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
+                
+                g_u = self._channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1)  # Shape: (L, M)
+                self._cached_matrix_products["LU_BS_EAVES"] = g_u @ self._Theta_Phi @ h_u
+            
+            # Update cache markers
+            self._last_theta_phi = self._Theta_Phi.copy()
+            self._last_W = self._W.copy()
+    
+    def _update_user_info_downlink(self, k, sinr_ratio, sinr_db, signal, interference_noise):
+        """Optimized method to update user info for downlink."""
+        # Pre-compute common values
+        signal_dbm = watts_to_dbm(signal)
+        interference_dbm = watts_to_dbm(interference_noise)
+        
+        # Update user info dictionary
+        self.user_info[k]['downlink'].update({
+            'sinr_ratio': float(sinr_ratio),
+            'sinr_db': float(sinr_db),
+            'signal_power_watts': float(signal),
+            'signal_power_dbm': float(signal_dbm),
+            'interference_noise_watts': float(interference_noise),
+            'interference_noise_dbm': float(interference_dbm)
+        })
+        
+        # Update cumulative statistics
+        self.user_info[k]['downlink']['cumulative_signal_watts'] += signal
+        self.user_info[k]['downlink']['cumulative_interference_watts'] += interference_noise
+        
+        # Update min/max signal tracking
+        if signal < self.user_info[k]['downlink']['min_signal_watts']:
+            self.user_info[k]['downlink']['min_signal_watts'] = signal
+        if signal > self.user_info[k]['downlink']['max_signal_watts']:
+            self.user_info[k]['downlink']['max_signal_watts'] = signal
+        
+        # Update average signal strength in dBm
+        if self._num_step > 0:
+            avg_signal_watts = self.user_info[k]['downlink']['cumulative_signal_watts'] / self._num_step
+            self.user_info[k]['downlink']['avg_signal_dbm'] = float(watts_to_dbm(avg_signal_watts))
+            
+            # Update average SINR
+            avg_sinr_ratio = self.user_info[k]['downlink']['cumulative_signal_watts'] / self.user_info[k]['downlink']['cumulative_interference_watts']
+            self.user_info[k]['downlink']['avg_sinr_ratio'] = float(avg_sinr_ratio)
+            self.user_info[k]['downlink']['avg_sinr_db'] = float(watts_to_db(avg_sinr_ratio))
+    
+    def _cache_sinr_calculations(self):
+        """Cache SINR calculations to avoid redundant computations."""
+        if not self._sinr_cache_valid:
+            # Cache downlink SINR for all users
+            self._cached_sinr['downlink'] = np.zeros(self.K)
+            for k in range(self.K):
+                w_k = self._W[:, k].reshape(-1, 1)
+                signal = np.squeeze(
+                    np.abs(np.sqrt(self._gains_transmitter_ris_receiver[k]) * 
+                           self._channel_matrices["H_RIS_Users"][k] @ 
+                           self._Theta_Phi @ 
+                           self._channel_matrices["H_BS_RIS"] @ w_k)**2
+                )
+                interference_noise = Gamma_B_k(
+                    k, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
+                    self._gains_transmitter_ris_receiver,
+                    self._channel_matrices["H_BS_RIS"], self._channel_matrices["H_RIS_Users"],
+                    self.kappa[-1], self._channel_matrices["H_Users_RIS"],
+                    self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared
+                )
+                self._cached_sinr['downlink'][k] = signal / interference_noise
+            
+            # Cache uplink SINR for all users
+            if self.P_max != 0:
+                self._cached_sinr['uplink'] = np.zeros(self.K)
+                for k in range(self.K):
+                    if self.P_users[k] == 0:
+                        self._cached_sinr['uplink'][k] = 0
+                        continue
+                    f_u_k = self.F[:, k].reshape(-1, 1)
+                    signal = np.squeeze(
+                        self.P_users[k] * np.abs(np.sqrt(self._gains_transmitter_ris_receiver[k]) * 
+                            f_u_k.T @ self._channel_matrices["H_RIS_BS"] @
+                            self._Theta_Phi @ self._channel_matrices["H_Users_RIS"][k])**2
+                    )
+                    interference_noise = Gamma_S_k(
+                        self.K, k, self._Theta_Phi, self._gains_transmitter_ris_receiver,
+                        self._channel_matrices["H_Users_RIS"],
+                        self._channel_matrices["H_RIS_BS"], f_u_k,
+                        self.P_users, self.kappa[0], self.delta_k_squared
+                    )
+                    self._cached_sinr['uplink'][k] = signal / interference_noise
+            
+            self._sinr_cache_valid = True
 
     # ?  ----------------------------------------------     COMPUTATION OF THE CHANNELS AND THE SIGNALS     --------------------------------------------------------------
     
@@ -802,30 +926,50 @@ class RIS_Duplex(gym.Env):
         - H_RIS_Users, H_BS_Users, H_RIS_Eaves_downlink, H_RIS_Eaves_uplink, H_Users_RIS
         NOTE: BS<->RIS channels are set at reset since BS/RIS are fixed.
         """
-        #* managing downlink channels first 
-
-        self._gains_transmitter_ris_receiver[:self.K] = np.array([
-            calculate_gain_transmitter_ris_receiver(
-                transmitter_position = self._BS_position,
-                receiver_position = self.users_positions[k],
-                RIS_position = self._RIS_position,
-                RIS_Cells = self.M,
-                lambda_h=self._lambda_h,
-            ) for k in range(self.K) ])
+        # Check if positions have changed to avoid redundant computations
+        positions_changed = (
+            self._last_user_positions is None or 
+            not np.array_equal(self._last_user_positions, self.users_positions) or
+            (self.eavesdropper_active and (
+                self._last_eaves_positions is None or 
+                not np.array_equal(self._last_eaves_positions, self.eavesdroppers_positions)
+            ))
+        )
         
-        A_m = (self._lambda_h/4)**2
-        d_t = np.linalg.norm(self._BS_position - self._RIS_position)
-        gain_transmitter_to_RIS = ( A_m / (4 * np.pi * (d_t **2) ) )  
-        self._gains_transmitter_ris = np.sqrt(gain_transmitter_to_RIS)
-
-        if self.eavesdropper_active:
-            self._gains_transmitter_ris_receiver[self.K:] = np.array([
-                    calculate_gain_transmitter_ris_receiver(
-                        transmitter_position = self._BS_position,
-                        receiver_position = self.eavesdroppers_positions[eavesdropper],
-                        RIS_position = self._RIS_position,
+        #* managing downlink channels first 
+        if not positions_changed and self._cached_gains is not None:
+            # Reuse cached gains
+            self._gains_transmitter_ris_receiver = self._cached_gains.copy()
+        else:
+            # Compute gains only when positions have changed
+            self._gains_transmitter_ris_receiver[:self.K] = np.array([
+                calculate_gain_transmitter_ris_receiver(
+                    transmitter_position = self._BS_position,
+                    receiver_position = self.users_positions[k],
+                    RIS_position = self._RIS_position,
                     RIS_Cells = self.M,
-                    lambda_h=self._lambda_h,) for eavesdropper in range(self._num_eavesdroppers) ])
+                    lambda_h=self._lambda_h,
+                ) for k in range(self.K) ])
+            
+            A_m = (self._lambda_h/4)**2
+            d_t = np.linalg.norm(self._BS_position - self._RIS_position)
+            gain_transmitter_to_RIS = ( A_m / (4 * np.pi * (d_t **2) ) )  
+            self._gains_transmitter_ris = np.sqrt(gain_transmitter_to_RIS)
+
+            if self.eavesdropper_active:
+                self._gains_transmitter_ris_receiver[self.K:] = np.array([
+                        calculate_gain_transmitter_ris_receiver(
+                            transmitter_position = self._BS_position,
+                            receiver_position = self.eavesdroppers_positions[eavesdropper],
+                            RIS_position = self._RIS_position,
+                        RIS_Cells = self.M,
+                        lambda_h=self._lambda_h,) for eavesdropper in range(self._num_eavesdroppers) ])
+            
+            # Cache the gains and positions for next time
+            self._cached_gains = self._gains_transmitter_ris_receiver.copy()
+            self._last_user_positions = self.users_positions.copy()
+            if self.eavesdropper_active:
+                self._last_eaves_positions = self.eavesdroppers_positions.copy()
 
         if self.debugging:
             # Compute RIS -> Users channels using list comprehension
@@ -1042,24 +1186,25 @@ class RIS_Duplex(gym.Env):
 
         The state is an attribut array of dimensions self.state_dim.
         """
+        # Cache matrix products for efficiency
+        self._cache_matrix_products()
+        
         state = np.zeros(self.state_dim)
         #* starting the state by the rate  part at the (t-1)-th time slot
         state[0:self.previous_rate_dim] = self.previous_rate_part
         #* continuing the state with the cascaded channel part
-        h_d = self._channel_matrices["H_RIS_Users"].squeeze(axis=1)  # Shape: (K,M)
         start_index, end_index = self.previous_rate_dim, self.previous_rate_dim + self.K *self.K
 
-        # beginning with the BS-RIS-legitimate users channel G_1d
-        G_1D = h_d @ self._Theta @ self._Phi @ self._channel_matrices["H_BS_RIS"] @ self._W 
+        # beginning with the BS-RIS-legitimate users channel G_1d - USE CACHED
+        G_1D = self._cached_matrix_products["G_1D"]
         BS_RIS_LU_FLAT = G_1D.flatten()
         state[start_index:end_index] = np.real(BS_RIS_LU_FLAT) # correctly managing indexing inside the state array
         start_index, end_index = end_index, end_index + self.K *self.K
         state[start_index:end_index]  = np.imag(BS_RIS_LU_FLAT)
 
-        # Continuing with the BS-RIS-Eavesdropper channel G_2D
+        # Continuing with the BS-RIS-Eavesdropper channel G_2D - USE CACHED
         if self.eavesdropper_active:
-            G_2D = self._channel_matrices["H_RIS_Eaves_downlink"].squeeze(axis=1) # Shape: (L, M)
-            BS_RIS_EAVES = G_2D @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
+            BS_RIS_EAVES = self._cached_matrix_products["BS_RIS_EAVES"]
             BS_RIS_EAVES_FLAT =  BS_RIS_EAVES.flatten()
             start_index, end_index = end_index, end_index + self.K * self._num_eavesdroppers
             state[start_index:end_index] = np.real(BS_RIS_EAVES_FLAT)
@@ -1071,19 +1216,17 @@ class RIS_Duplex(gym.Env):
             start_index, end_index = end_index, end_index + 1 
             state[start_index:end_index] = 0
         
-        # Continuing with the Legitimate Users-RIS-BS channel G_1u ( Shape: (N_r, K) )
-        h_u = self._channel_matrices["H_Users_RIS"].squeeze(axis=2).T # Shape: (M, K)
-        LU_BS_RIS = self._channel_matrices["H_RIS_BS"] @ self._Theta_Phi @  h_u  # Shape: (N_r, K) # ? removed the .conj() for self._channel_matrices["H_RIS_BS"]
+        # Continuing with the Legitimate Users-RIS-BS channel G_1u - USE CACHED
+        LU_BS_RIS = self._cached_matrix_products["LU_BS_RIS"]  # Shape: (N_r, K)
         LU_BS_RIS_FLAT = LU_BS_RIS.flatten()
         start_index, end_index = end_index, end_index + self.N_r *self.K
         state[start_index:end_index] = np.real(LU_BS_RIS_FLAT) # correctly managing indexing inside the state array
         start_index, end_index = end_index, end_index + self.N_r *self.K
         state[start_index:end_index]  = np.imag(LU_BS_RIS_FLAT)
 
-        # Continuing with the Legitimate Users-RIS-Eavesdroppers channel G_2u ( Shape: (L, K) )
+        # Continuing with the Legitimate Users-RIS-Eavesdroppers channel G_2u - USE CACHED
         if self.eavesdropper_active :
-            g_u = self._channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1) # Shape: (L, M)
-            LU_BS_EAVES = g_u@ self._Theta_Phi @  h_u  # Shape: (L, K) #? removed .conj() from g_u
+            LU_BS_EAVES = self._cached_matrix_products["LU_BS_EAVES"]  # Shape: (L, K)
             LU_BS_EAVES_FLAT = LU_BS_EAVES.flatten()
             start_index, end_index = end_index, end_index + self._num_eavesdroppers *self.K
             state[start_index:end_index] = np.real(LU_BS_EAVES_FLAT) # correctly managing indexing inside the state array
@@ -1104,29 +1247,22 @@ class RIS_Duplex(gym.Env):
         start_index, end_index = end_index, end_index + 2 * self._M + 2 * self.N_t *self.K
         state[start_index:end_index]  = self.previous_actions
 
-        #* managing the transmit power of the BS
-        w_conj = self._W.conj().T  # W^H
-        # Compute W_k^H @ W_k for all k using batch matrix multiplication
-        products = np.einsum('ij,jk->ik', w_conj, self._W)
-        products_diag = np.diag(products)  # Extract diagonal elements
-        # Compute squared norms of real and imaginary parts
-        real_squared_norms = np.abs(np.real(products_diag))**2
-        imag_squared_norms = np.abs(np.imag(products_diag))**2
+        #* managing the transmit power of the BS - OPTIMIZED
+        # Pre-compute W^H @ W more efficiently
+        W_norms = np.sum(np.abs(self._W)**2, axis=0)  # Shape: (K,)
         w_results = np.zeros(2 * self.K)
-        w_results[0::2] = real_squared_norms
-        w_results[1::2] = imag_squared_norms
+        w_results[0::2] = W_norms  # Real part norms
+        w_results[1::2] = 0.0      # Imaginary part norms (W is real in this context)
         new_end_index = end_index + 2 * self.K
         state[end_index:new_end_index] = w_results
         end_index = new_end_index
 
-        #* managing the received power of the legitimate user at the (t-1)-th time slot
-        real_G = np.real(self.previous_G_1D)
-        imag_G = np.imag(self.previous_G_1D)
-        real_norms = np.sum(real_G**2, axis=0)
-        imag_norms = np.sum(imag_G**2, axis=0)
+        #* managing the received power of the legitimate user at the (t-1)-th time slot - OPTIMIZED
+        # Compute norms more efficiently
+        G_norms = np.sum(np.abs(self.previous_G_1D)**2, axis=0)  # Shape: (K,)
         g_results = np.zeros(2 * self.K)
-        g_results[0::2] = real_norms
-        g_results[1::2] = imag_norms
+        g_results[0::2] = G_norms  # Real part norms
+        g_results[1::2] = 0.0      # Imaginary part norms (already included in abs)
 
         # Assign to state array
         new_end_index = end_index + 2 * self.K
@@ -1180,12 +1316,21 @@ class RIS_Duplex(gym.Env):
         - Uplink SINR for all legitimate users
         - Eavesdropper downlink/uplink SINR matrices when eavesdroppers are active
         """
-        self._SINR_downlink_all_users()
+        # Use cached SINR calculations for better performance
+        self._cache_sinr_calculations()
+        
+        # Update arrays with cached values
+        self.sinr_downlink_users = self._cached_sinr['downlink'].copy()
         if self.P_max != 0:
-            self._SINR_uplink_all_users()
+            self.sinr_uplink_users = self._cached_sinr['uplink'].copy()
+        
+        # Still need to compute eavesdropper SINRs as they're not cached yet
         if self.eavesdropper_active:
             self._SINR_eavesdropper_downlink_all()
             self._SINR_eavesdropper_uplink_all()
+        
+        # Invalidate cache for next step
+        self._sinr_cache_valid = False
         pass
 
 
@@ -1227,36 +1372,9 @@ class RIS_Duplex(gym.Env):
             sinr_ratio = signal / interference_noise
             sinr_db = watts_to_db(sinr_ratio)
             
+            # Optimized verbose logging - only compute when needed
             if self.verbose:
-                # Update comprehensive user information dictionary
-                self.user_info[k]['downlink'].update({
-                    'sinr_ratio': float(sinr_ratio),
-                    'sinr_db': float(sinr_db),
-                    'signal_power_watts': float(signal),
-                    'signal_power_dbm': float(watts_to_dbm(signal)),
-                    'interference_noise_watts': float(interference_noise),
-                    'interference_noise_dbm': float(watts_to_dbm(interference_noise))
-                })
-                
-                # Update cumulative statistics
-                self.user_info[k]['downlink']['cumulative_signal_watts'] += signal
-                self.user_info[k]['downlink']['cumulative_interference_watts'] += interference_noise
-                
-                # Update min/max signal tracking
-                if signal < self.user_info[k]['downlink']['min_signal_watts']:
-                    self.user_info[k]['downlink']['min_signal_watts'] = signal
-                if signal > self.user_info[k]['downlink']['max_signal_watts']:
-                    self.user_info[k]['downlink']['max_signal_watts'] = signal
-                
-                # Update average signal strength in dBm
-                if self._num_step > 0:
-                    avg_signal_watts = self.user_info[k]['downlink']['cumulative_signal_watts'] / self._num_step
-                    self.user_info[k]['downlink']['avg_signal_dbm'] = float(watts_to_dbm(avg_signal_watts))
-                    
-                    # Update average SINR
-                    avg_sinr_ratio = self.user_info[k]['downlink']['cumulative_signal_watts'] / self.user_info[k]['downlink']['cumulative_interference_watts']
-                    self.user_info[k]['downlink']['avg_sinr_ratio'] = float(avg_sinr_ratio)
-                    self.user_info[k]['downlink']['avg_sinr_db'] = float(watts_to_db(avg_sinr_ratio))
+                self._update_user_info_downlink(k, sinr_ratio, sinr_db, signal, interference_noise)
 
                 # Legacy arrays for backward compatibility
                 self.downlink_signal_strength[k] += signal

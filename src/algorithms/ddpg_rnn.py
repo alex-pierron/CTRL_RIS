@@ -123,7 +123,7 @@ class DDPG_RNN:
             critic_linear_layers=critic_linear_layers, sequence_length=sequence_length
         ).to(self.device)
         
-        print(f" DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
+        print(f"\n DDPG using RNN architecture: {rnn_type.upper()} (hidden_size={rnn_hidden_size}, num_layers={rnn_num_layers})")
 
         # Initialize target networks
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -159,7 +159,7 @@ class DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f" DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
+                print(f"\n DDPG RNN using Sequence Prioritized Experience Replay (seq_len={sequence_length}, alpha={per_alpha})")
             else:
                 self.replay_buffer = SequenceReplayBuffer(
                     buffer_size=buffer_size,
@@ -169,7 +169,7 @@ class DDPG_RNN:
                     sequence_length=sequence_length,
                     episode_boundaries=True
                 )
-                print(f" DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
+                print(f"\n DDPG RNN using Sequence Experience Replay (seq_len={sequence_length})")
         else:
             # Use standard buffers for single-step training (backward compatibility)
             if self.use_per:
@@ -183,7 +183,7 @@ class DDPG_RNN:
                     beta_frames=per_beta_frames,
                     epsilon=per_epsilon
                 )
-                print(f" DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
+                print(f"\n DDPG using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start})")
             else:
                 self.replay_buffer = ReplayBuffer(
                     buffer_size=buffer_size,
@@ -191,7 +191,7 @@ class DDPG_RNN:
                     action_dim=action_dim,
                     numpy_rng=self.network_numpy_rng
                 )
-                print(" DDPG using standard Experience Replay")
+                print("\n DDPG using Standard Experience Replay")
 
     def _sample_from_buffer(self, batch_size):
         """Samples from the replay buffer, handling both standard and sequence-aware buffers."""

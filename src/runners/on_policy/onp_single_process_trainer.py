@@ -167,7 +167,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
     average_reward_per_env = np.zeros(num_episode)
 
     # === Main training loop over episodes ===
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=1, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         start_episode_time = time.time()
 
         if curriculum_learning:
@@ -469,36 +475,45 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         episode_max_instant_reward_reached = max(instant_user_rewards) if len(valid_rewards) > 0 else 0.0
         
         
-        # Message for printing to the console
+        # Create console message for episode summary (with emojis)
         console_message = (
-            f"\n\n !!~ ON-POLICY TRAINING EPISODE No {episode} | Optimization Steps Performed: {optim_count}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"   ~ ~ REWARDS:\n"
-            f"     |--> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
-            f"     |--> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"  ~ ~ FAIRNESS:\n"
-            f"     |--> Average User Fairness: {avg_fairness_episode:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"  ~ ~ OTHERS:\n"
-            f"     |--> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f}\n\n"
+            f"\n\n"
+            f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+            f"║ 🎯 ON-POLICY TRAINING EPISODE #{episode:3d} │ 🧠 Optimizations: {optim_count:4d} ║\n"
+            f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+            f"║ 📍 POSITIONING:\n"
+            f"║    User Equipment Positions: {users_position}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 🏆 REWARDS:\n"
+            f"║    • Average Reward: {avg_reward_episode:8.4f} │ Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
+            f"║    • Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} │ Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ ⚖️  FAIRNESS:\n"
+            f"║    • Average Fairness: {avg_fairness_episode:8.4f} │ Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 📊 PERFORMANCE:\n"
+            f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
-        # Message for logging to a file
+        # Create ASCII version for file logging
         log_message = (
-            f"\n+{'=' * 100}+\n"
-            f"| !~ ON-POLICY TRAINING EPISODE N° {episode} | Optimization Steps Performed: {optim_count} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ REWARDS: |\n"
-            f"|     --> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"
-            f"|     --> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ FAIRNESS: |\n"
-            f"|     --> Average User Fairness: {avg_fairness_episode:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ OTHERS: |\n"
-            f"|     --> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-            f"+{'=' * 100}+\n"
+            f"\n+====================================================================================================+\n"
+            f"| [TRAIN] ON-POLICY EPISODE #{episode:3d} | Optimizations: {optim_count:4d} |\n"
+            f"+====================================================================================================+\n"
+            f"| POSITIONING:\n"
+            f"|    User Equipment Positions: {users_position}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| REWARDS:\n"
+            f"|    * Average Reward: {avg_reward_episode:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
+            f"|    * Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} | Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| FAIRNESS:\n"
+            f"|    * Average Fairness: {avg_fairness_episode:8.4f} | Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| PERFORMANCE:\n"
+            f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"+====================================================================================================+\n"
         )
 
         tqdm.write(console_message)
@@ -526,7 +541,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 all_episode_eaves_rewards = np.zeros(episode_per_eval)
 
             # NOTE: Loop over evaluation episodes
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=2, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
                 eval_env.reset()
                 episode_user_rewards = np.zeros(max_num_step_per_episode)
                 episode_user_fairness = np.zeros(max_num_step_per_episode)
