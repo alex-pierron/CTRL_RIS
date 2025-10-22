@@ -430,6 +430,9 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             # Set actor network to training mode
             network.actor.train()
             
+            if not buffer_filled:
+                    index_episode_buffer_filled = episode
+                    
             # Perform network training if replay buffer is sufficiently filled
             if network.replay_buffer.size >= buffer_size:
                 if not buffer_filled:

@@ -282,56 +282,19 @@ class TaskManager:
 
     def compute_episodes_outcome(self, downlink_sum = None, uplink_sum = None , best_eavesdropper_sum = None) -> Outcome:
         """
-        Compute the outcome of an episode based on several arrays and specific conditions.
-
-        Args:
-            arrays: A list of numpy arrays to be used for computing the outcome.
-
-        Returns:
-            The outcome of the episode based on the specific conditions.
+        Backward-compat wrapper kept for signature compatibility. Use the robust
+        implementation below. This alias forwards to the main implementation.
         """
-        downlink_meaned = np.array(downlink_sum) / self.num_steps_per_episode
-            
-        uplink_meaned = np.array(uplink_sum) / self.num_steps_per_episode
-
-        def compute_condition_result(condition_meaned, threshold, num_users, for_eavesdropper:bool = False):
-            if for_eavesdropper:
-                condition = np.sum(condition_meaned < threshold, axis=1) / num_users
-                return np.where(condition == 1, Outcome.SUCCESS.value,
-                            np.where(condition >= 0.51, Outcome.FAILURE.value, Outcome.SEVERE_FAILURE.value))
-            else:
-                condition = np.sum(condition_meaned > threshold, axis=1) / num_users
-                return np.where(condition == 1, Outcome.SUCCESS.value,
-                                np.where(condition >= 0.51, Outcome.FAILURE.value, Outcome.SEVERE_FAILURE.value))
-
-        if self._is_downlink_used:
-            #print(downlink_meaned.shape)
-            downlink_condition_result = compute_condition_result(downlink_meaned, self.thresholds[0], self.num_users)
-
-        if self._is_uplink_used:
-            uplink_condition_result = compute_condition_result(uplink_meaned, self.thresholds[1], self.num_users)
-
-        if self._are_eavesdroppers_used:
-            eavesdropping_condition_result = compute_condition_result(uplink_meaned, self.thresholds[1], self.num_users, for_eavesdropper=True)
-
-        if self._is_downlink_used and self._is_uplink_used and self._are_eavesdroppers_used:
-            signal_outcomes = np.maximum(downlink_condition_result, uplink_condition_result)
-            outcomes = np.maximum(signal_outcomes, eavesdropping_condition_result)
-        elif self._is_downlink_used and self._is_uplink_used:
-            outcomes = np.maximum(downlink_condition_result, uplink_condition_result)
-        elif self._is_downlink_used:
-            outcomes = downlink_condition_result
-        elif self._is_uplink_used:
-            outcomes = uplink_condition_result
-        outcomess= []
-        for outcome in outcomes:
-            outcomess.append(np.max(outcome))
-        return outcomess
+        return self._compute_episodes_outcome_impl(
+            downlink_sum=downlink_sum,
+            uplink_sum=uplink_sum,
+            best_eavesdropper_sum=best_eavesdropper_sum
+        )
 
 
 
-    def compute_episodes_outcome(self,
-                                 downlink_sum=None,uplink_sum=None,best_eavesdropper_sum=None) -> Outcome:
+    def _compute_episodes_outcome_impl(self,
+                                 downlink_sum=None, uplink_sum=None, best_eavesdropper_sum=None) -> Outcome:
         """
         Compute the outcome of an episode based on several arrays and specific conditions.
 
@@ -345,11 +308,25 @@ class TaskManager:
         """
         def compute_condition_result(values, threshold, num_users, for_eavesdropper=False):
             """Helper to compute condition results."""
-            condition = (
-                np.sum(values < threshold, axis=1) / num_users
-                if for_eavesdropper
-                else np.sum(values > threshold, axis=1) / num_users
-            )
+            values = np.asarray(values)
+            # Normalize to (batch, users) by flattening all non-batch dims
+            if values.ndim == 0:
+                # Single scalar → treat as one episode, one user
+                values2d = values.reshape(1, 1)
+            elif values.ndim == 1:
+                # (users,) → (1, users)
+                values2d = values.reshape(1, -1)
+            else:
+                # (batch, ...users_dims...) → (batch, users)
+                batch = values.shape[0]
+                users = int(np.prod(values.shape[1:]))
+                values2d = values.reshape(batch, users)
+
+            # Sum condition over users axis
+            if for_eavesdropper:
+                condition = np.sum(values2d < threshold, axis=1) / num_users
+            else:
+                condition = np.sum(values2d > threshold, axis=1) / num_users
             return np.where(
                 condition == 1, Outcome.SUCCESS.value,
                 np.where(condition >= 0.51, Outcome.FAILURE.value, Outcome.SEVERE_FAILURE.value)
@@ -383,10 +360,11 @@ class TaskManager:
 
         if not results:
             return []
-        # Combine all results elementwise by maximum (severity ranking is encoded in values)
-        outcomes = np.maximum.reduce(results)
-        # Return max outcome per episode
-        return np.max(outcomes, axis=1)
+        # Combine all results by taking the maximum severity per episode
+        # Normalize each to 1D then stack
+        flat_results = [np.asarray(r).reshape(-1) for r in results]
+        outcomes = np.max(np.vstack(flat_results), axis=0)
+        return [Outcome(int(o)) for o in outcomes.tolist()]
 
 
     def _reset_buffer_for_new_level(self):

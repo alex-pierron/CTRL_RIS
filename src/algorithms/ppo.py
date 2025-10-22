@@ -171,7 +171,7 @@ class ActorNetwork(nn.Module):
         """
 
         # Ensure float type
-        raw_W = raw_W
+        #raw_W = raw_W.detach()
 
         # Frobenius norms for each matrix in the batch
         frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')

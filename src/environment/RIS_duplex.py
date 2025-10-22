@@ -291,12 +291,15 @@ class RIS_Duplex(gym.Env):
             modes = {"random_walk": 0, "brownian": 1, "levy_flight": 2}
             self.mobility_model_eavesdroppers = modes[self.env_config.get('mobility_model_eavesdroppers', "brownian")]
         # NOTE: Position generator encapsulates user/eaves spawn logic
+        min_distance = self.env_config.get('min_distance', 2)
+        
         self.position_generator = PositionGenerator(
             self.num_users,
             self.users_spawn_limits,
             num_eavesdroppers=self._num_eavesdroppers,
             RIS_position=self._RIS_position,
-            numpy_generator=self.numpy_rng
+            numpy_generator=self.numpy_rng,
+            min_distance = min_distance,
         )
 
         self.angles = np.linspace(0, 2 * np.pi, 360)
