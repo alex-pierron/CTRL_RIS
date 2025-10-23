@@ -296,14 +296,27 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             # NOTE: Track best rewards for rendering
             if reward_value > max_episode_reward and use_rendering:
                 max_episode_reward = round(reward_value, 4)
+                
+                # Get additional information for best case analysis
+                additional_information_best_case = training_envs.get_additionnal_informations()
+                W = training_envs.get_W()
+                total_power_deployed = round(np.trace(np.diag(np.diag(W @ W.conj().T)).real), 4)
+                
+                # Extract power patterns for visualization
                 max_W_power_patterns = training_envs.get_W_power_patterns()
                 max_downlink_power_patterns = training_envs.get_downlink_power_patterns()
                 max_uplink_power_patterns = training_envs.get_uplink_power_patterns()
+                
+                # Store best power patterns for animation
                 episode_best_power_patterns["rewards"].append(deepcopy(reward_value))
                 episode_best_power_patterns["steps"].append(deepcopy(num_step))
                 episode_best_power_patterns["W_power_patterns"].append(deepcopy(max_W_power_patterns))
                 episode_best_power_patterns["downlink_power_patterns"].append(deepcopy(max_downlink_power_patterns))
                 episode_best_power_patterns["uplink_power_patterns"].append(deepcopy(max_uplink_power_patterns))
+
+            elif reward_value > max_episode_reward:
+                max_episode_reward = round(reward_value, 4)
+                additional_information_best_case = training_envs.get_additionnal_informations()
 
             # Track and render best eavesdropper rewards
             if using_eavesdropper and instant_eavesdropper_rewards[num_step] > max_episode_eavesdropper_reward and use_rendering:
@@ -385,10 +398,6 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                     local_average_eavesdropper_reward = np.mean(local_eaves_rewards)
                     writer.add_scalar("Eavesdropper/Local average reward", local_average_eavesdropper_reward, total_steps)
                     writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
-
-                # Get additional information for best case
-                if reward_value > max_episode_reward:
-                    additional_information_best_case = training_envs.get_additionnal_informations()
 
                 message = (
                     f"\n|--> ON-POLICY TRAINING EPISODE {episode}, STEP {num_step + 1}\n"
@@ -487,6 +496,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             f"║ 🏆 REWARDS:\n"
             f"║    • Average Reward: {avg_reward_episode:8.4f} │ Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
             f"║    • Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} │ Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"║    • Detailed Baseline Reward: {additional_information_best_case}\n"
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ ⚖️  FAIRNESS:\n"
             f"║    • Average Fairness: {avg_fairness_episode:8.4f} │ Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
@@ -507,6 +517,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             f"| REWARDS:\n"
             f"|    * Average Reward: {avg_reward_episode:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
             f"|    * Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} | Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
+            f"|    * Detailed Baseline Reward: {additional_information_best_case}\n"
             f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| FAIRNESS:\n"
             f"|    * Average Fairness: {avg_fairness_episode:8.4f} | Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
