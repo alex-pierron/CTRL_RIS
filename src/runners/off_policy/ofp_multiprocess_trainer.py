@@ -270,7 +270,8 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         
         # Get initial user positions for logging
         user_positions = training_envs.get_users_positions()
-        
+        if using_eavesdropper:
+            eavesdroppers_positions =  training_envs.get_eavesdroppers_positions()
         # Initialize episode tracking arrays
         instant_user_rewards = np.zeros((n_rollout_envs, max_num_step_per_episode))
         basic_reward_episode = np.zeros((max_num_step_per_episode, n_rollout_envs))
@@ -389,15 +390,14 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
                 # Track optimization steps and timing
                 if updated_actor:
+                    avg_actor_loss += actor_loss
                     optim_steps_actor_ep += 1
                     step_time_list.append(training_time_2 - training_time_1)
 
                 if updated_critic:
+                    avg_critic_loss += critic_loss
                     optim_steps_critic_ep += 1
 
-                # Accumulate losses for averaging
-                avg_actor_loss += actor_loss
-                avg_critic_loss += critic_loss
                 # Periodic logging of training metrics and performance statistics
                 if (current_step + 1) % frequency_information == 0 and (num_step + 1) % frequency_information == 0:
                     
@@ -406,8 +406,15 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                                      np.mean(network.replay_buffer.reward_buffer), current_step)
 
                     # Calculate and log current average losses
-                    current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
-                    current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
+                    if optim_steps_actor_ep:
+                        current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
+                    else:
+                        current_avg_actor_loss = 0
+                    if optim_steps_critic_ep:
+                        current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
+                    else:
+                        current_avg_critic_loss = 0
+
                     writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                     writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
 
@@ -593,6 +600,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
             f"║ 📍 POSITIONING:\n"
             f"║    User Equipment Positions: {user_positions}\n"
+            f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 🏆 REWARDS:\n"
             f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"

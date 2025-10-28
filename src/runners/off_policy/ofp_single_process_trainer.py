@@ -220,7 +220,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     optim_steps_actor = 0
     optim_steps_critic = 0
     average_reward_per_env = np.zeros(num_episode)
-    
+    smoothed_average_fairness = np.zeros(num_episode)
+
     # Configure replay buffer filling progress tracking
     # TODO: Optimize buffer progress bar management for better performance
     buffer_bar_finished = False
@@ -489,15 +490,14 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                 
                 # Track optimization steps and timing
                 if updated_actor:
+                    avg_actor_loss += actor_loss
                     optim_steps_actor_ep += 1
                     step_time_list.append(training_time_2 - training_time_1)
 
                 if updated_critic:
+                    avg_critic_loss += critic_loss
                     optim_steps_critic_ep += 1
 
-                # Accumulate losses for averaging
-                avg_actor_loss += actor_loss
-                avg_critic_loss += critic_loss
 
                 # Log detailed metrics for single episode runs
                 if solo_episode:
@@ -544,8 +544,14 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                                             instant_user_rewards[num_step + 1 - frequency_information: num_step], current_step)
 
                         # Log loss metrics
-                        current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
-                        current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
+                        if optim_steps_actor_ep:
+                            current_avg_actor_loss = avg_actor_loss / optim_steps_actor_ep
+                        else:
+                            current_avg_actor_loss = 0
+                        if optim_steps_critic_ep:
+                            current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
+                        else:
+                            current_avg_critic_loss = 0
                         writer.add_scalar("Actor Loss/Instant actor loss", actor_loss, current_step)
                         writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                         writer.add_scalar("Critic Loss/Instant critic loss", critic_loss, current_step)
@@ -614,8 +620,14 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         # ========================================================================
         # Calculate episode-level averages
         if buffer_filled:
-            avg_actor_loss /= optim_steps_actor_ep
-            avg_critic_loss /= optim_steps_critic_ep
+            if optim_steps_actor_ep:
+                avg_actor_loss /= optim_steps_actor_ep
+            else:
+                avg_actor_loss = 0
+            if optim_steps_critic_ep:
+                avg_critic_loss /= optim_steps_critic_ep
+            else:
+                avg_critic_loss = 0
         avg_reward = np.mean(instant_user_rewards)
         avg_fairness = np.mean(instant_user_jain_fairness)
         
@@ -799,6 +811,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                 f"+====================================================================================================+\n"
                 f"| POSITIONING:\n"
                 f"|    User Equipment Positions: {users_position}\n"
+                f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
                 f"| ---------------------------------------------------------------------------------------------------- |\n"
                 f"| REWARDS:\n"
                 f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
@@ -855,14 +868,16 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             logger.verbose(log_message)"""
 
 
-        # Store episode reward for tracking
+        # Store episode reward and fairness for tracking
         average_reward_per_env[episode] = avg_reward
-
+        smoothed_average_fairness[episode] = avg_fairness
         # Log comprehensive episode metrics to TensorBoard
         writer.add_scalar("General/Time per episode", time.time() - start_episode_time, episode)
         
         # Log reward metrics
-        writer.add_scalar("Rewards/Mean average reward", np.mean(average_reward_per_env[:episode+1]), episode)
+        if buffer_filled:
+            writer.add_scalar("Rewards/Mean average reward", np.mean(average_reward_per_env[buffer_number_of_required_episode-1:episode+1]), episode)
+            writer.add_scalar("Fairness/Smoothed average fairness", np.mean(smoothed_average_fairness[buffer_number_of_required_episode-1:episode+1]), episode)
         writer.add_scalar("Rewards/Max reward reached per episode", episode_max_instant_reward_reached, episode)
         writer.add_scalar("Rewards/Average Reward per episode", avg_reward, episode)
         writer.add_scalar("Rewards/Best average reward per episode", best_average_reward, episode)
