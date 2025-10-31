@@ -570,6 +570,155 @@ class RIS_Duplex(gym.Env):
     def get_episode_action_noise(self):
         """Returns the action noise for the current episode."""
         return self.episode_action_noise
+        
+    @property
+    def get_user_info(self):
+        """Returns comprehensive user information dictionary."""
+        return self.user_info
+    
+    @property
+    def get_eavesdropper_info(self):
+        """Returns comprehensive eavesdropper information dictionary."""
+        return self.eavesdropper_info
+
+    def get_user_communication_rates(self):
+        """Compute downlink, uplink, and total communication rates for all users.
+        
+        Returns:
+            dict: Dictionary with keys 'downlink', 'uplink', 'total', each containing
+                  numpy arrays of shape (K,) with rates in bits/s/Hz per user.
+        """
+        downlink_rates = np.array([np.log2(1 + self.sinr_downlink_users[k]) for k in range(self.K)])
+        if self._uplink_used:
+            uplink_rates = np.array([np.log2(1 + self.sinr_uplink_users[k]) for k in range(self.K)])
+        else:
+            uplink_rates = np.zeros(self.K)
+        total_rates = downlink_rates + uplink_rates
+        
+        return {
+            'downlink': downlink_rates,
+            'uplink': uplink_rates,
+            'total': total_rates
+        }
+    
+    def get_eavesdropper_communication_rates(self):
+        """Compute downlink, uplink, and total communication rates for all eavesdroppers.
+        
+        Returns:
+            dict: Dictionary with keys 'downlink', 'uplink', 'total', each containing
+                  numpy arrays of shape (K, L) with rates in bits/s/Hz per user-eavesdropper pair.
+                  Also includes 'max_per_user' with shape (K,) for maximum rates across eavesdroppers.
+        """
+        if not self.eavesdropper_active:
+            return {
+                'downlink': np.zeros((self.K, 0)),
+                'uplink': np.zeros((self.K, 0)),
+                'total': np.zeros((self.K, 0)),
+                'max_per_user': np.zeros(self.K)
+            }
+        
+        downlink_rates = np.zeros((self.K, self._num_eavesdroppers))
+        uplink_rates = np.zeros((self.K, self._num_eavesdroppers))
+        
+        for k in range(self.K):
+            for l in range(self._num_eavesdroppers):
+                downlink_rates[k, l] = np.log2(1 + self.SINR_E_d_k_l(k, l))
+                if self._uplink_used:
+                    uplink_rates[k, l] = np.log2(1 + self.SINR_E_u_k_l(k, l))
+        
+        total_rates = downlink_rates + uplink_rates
+        max_per_user = np.max(total_rates, axis=1)  # Maximum across eavesdroppers for each user
+        
+        return {
+            'downlink': downlink_rates,
+            'uplink': uplink_rates,
+            'total': total_rates,
+            'max_per_user': max_per_user
+        }
+    
+    def get_user_signal_strengths(self):
+        """Get minimum and maximum signal strengths for all users.
+        
+        Returns:
+            dict: Dictionary with keys 'min_downlink', 'max_downlink', 'min_uplink', 'max_uplink',
+                  each containing numpy arrays of shape (K,) with signal strengths in dBm.
+        """
+        min_downlink = np.array([watts_to_dbm(self.user_info[k]['downlink']['min_signal_watts']) 
+                                  if self.user_info[k]['downlink']['min_signal_watts'] != np.inf 
+                                  else -np.inf for k in range(self.K)])
+        max_downlink = np.array([watts_to_dbm(self.user_info[k]['downlink']['max_signal_watts']) 
+                                if self.user_info[k]['downlink']['max_signal_watts'] != -np.inf 
+                                else -np.inf for k in range(self.K)])
+        
+        min_uplink = np.array([watts_to_dbm(self.user_info[k]['uplink']['min_signal_watts']) 
+                              if self.user_info[k]['uplink']['min_signal_watts'] != np.inf 
+                              else -np.inf for k in range(self.K)])
+        max_uplink = np.array([watts_to_dbm(self.user_info[k]['uplink']['max_signal_watts']) 
+                              if self.user_info[k]['uplink']['max_signal_watts'] != -np.inf 
+                              else -np.inf for k in range(self.K)])
+        
+        return {
+            'min_downlink': min_downlink,
+            'max_downlink': max_downlink,
+            'min_uplink': min_uplink,
+            'max_uplink': max_uplink
+        }
+    
+    def get_eavesdropper_signal_strengths(self):
+        """Get minimum and maximum signal strengths for all eavesdroppers.
+        
+        Returns:
+            dict: Dictionary with keys 'min_downlink', 'max_downlink', 'min_uplink', 'max_uplink',
+                  each containing numpy arrays of shape (K, L) with signal strengths in dBm.
+                  Also includes 'min_across_eaves', 'max_across_eaves' with shape (K,) for min/max across eavesdroppers.
+        """
+        if not self.eavesdropper_active:
+            return {
+                'min_downlink': np.zeros((self.K, 0)),
+                'max_downlink': np.zeros((self.K, 0)),
+                'min_uplink': np.zeros((self.K, 0)),
+                'max_uplink': np.zeros((self.K, 0)),
+                'min_across_eaves': np.zeros(self.K),
+                'max_across_eaves': np.zeros(self.K)
+            }
+        
+        min_downlink = np.zeros((self.K, self._num_eavesdroppers))
+        max_downlink = np.zeros((self.K, self._num_eavesdroppers))
+        min_uplink = np.zeros((self.K, self._num_eavesdroppers))
+        max_uplink = np.zeros((self.K, self._num_eavesdroppers))
+        
+        for k in range(self.K):
+            for l in range(self._num_eavesdroppers):
+                min_dl = self.eavesdropper_info[l]['downlink']['min_signal_watts'][k]
+                max_dl = self.eavesdropper_info[l]['downlink']['max_signal_watts'][k]
+                min_downlink[k, l] = watts_to_dbm(min_dl) if min_dl != np.inf else -np.inf
+                max_downlink[k, l] = watts_to_dbm(max_dl) if max_dl != -np.inf else -np.inf
+                
+                min_ul = self.eavesdropper_info[l]['uplink']['min_signal_watts'][k]
+                max_ul = self.eavesdropper_info[l]['uplink']['max_signal_watts'][k]
+                min_uplink[k, l] = watts_to_dbm(min_ul) if min_ul != np.inf else -np.inf
+                max_uplink[k, l] = watts_to_dbm(max_ul) if max_ul != -np.inf else -np.inf
+        
+        # Min/max across all eavesdroppers for each user
+        # Combine downlink and uplink, then find min/max across eavesdroppers
+        if self._uplink_used:
+            combined_min = min_downlink + min_uplink
+            combined_max = max_downlink + max_uplink
+        else:
+            combined_min = min_downlink
+            combined_max = max_downlink
+        
+        min_across_eaves = np.min(combined_min, axis=1)
+        max_across_eaves = np.max(combined_max, axis=1)
+        
+        return {
+            'min_downlink': min_downlink,
+            'max_downlink': max_downlink,
+            'min_uplink': min_uplink,
+            'max_uplink': max_uplink,
+            'min_across_eaves': min_across_eaves,
+            'max_across_eaves': max_across_eaves
+        }
 
     @property
     def observation_space(self) -> gym.Space:
@@ -839,16 +988,23 @@ class RIS_Duplex(gym.Env):
             self._cached_matrix_products["G_1D"] = h_d @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
             
             # Cache LU-RIS-BS channel products  
-            h_u = self._channel_matrices["H_Users_RIS"].squeeze(axis=2).T  # Shape: (M, K)
-            self._cached_matrix_products["LU_BS_RIS"] = self._channel_matrices["H_RIS_BS"] @ self._Theta_Phi @ h_u
+            if self._uplink_used:
+                h_u = self._channel_matrices["H_Users_RIS"].squeeze(axis=2).T  # Shape: (M, K)
+                self._cached_matrix_products["LU_BS_RIS"] = self._channel_matrices["H_RIS_BS"] @ self._Theta_Phi @ h_u
+            else:
+                # Placeholder zeros when uplink is disabled
+                self._cached_matrix_products["LU_BS_RIS"] = np.zeros((self.N_r, self.K))
             
             # Cache eavesdropper products if active
             if self.eavesdropper_active:
                 G_2D = self._channel_matrices["H_RIS_Eaves_downlink"].squeeze(axis=1)  # Shape: (L, M)
                 self._cached_matrix_products["BS_RIS_EAVES"] = G_2D @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
                 
-                g_u = self._channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1)  # Shape: (L, M)
-                self._cached_matrix_products["LU_BS_EAVES"] = g_u @ self._Theta_Phi @ h_u
+                if self._uplink_used:
+                    g_u = self._channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1)  # Shape: (L, M)
+                    self._cached_matrix_products["LU_BS_EAVES"] = g_u @ self._Theta_Phi @ h_u
+                else:
+                    self._cached_matrix_products["LU_BS_EAVES"] = np.zeros((self._num_eavesdroppers, self.K))
             
             # Update cache markers
             self._last_theta_phi = self._Theta_Phi.copy()
@@ -1016,6 +1172,7 @@ class RIS_Duplex(gym.Env):
         ])  # Shape: (L, 1, M)
 
         #* managing uplink channels 
+    
         # Compute Users -> RIS channels
         self._channel_matrices["H_Users_RIS"] = np.array([
             rician_fading_channel(
@@ -1058,16 +1215,17 @@ class RIS_Duplex(gym.Env):
         self._channel_matrices["H_RIS_Eaves_downlink"] = np.array(H_RIS_Eaves_downlink)  # Shape: (L, 1, M)
         
         # Compute RIS -> Eavesdroppers channels for the uplink
-        H_RIS_Eaves_uplink = []
-        for l in range(self._num_eavesdroppers):
-            H_RIS_Eaves_uplink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
-                                                            receiver_position = self.eavesdroppers_positions[l],
-                                                            W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
-                                                            d_h_rx = self._d_h[3],
-                                                            lambda_h =  self._lambda_h,
-                                                            epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
-                                                            numpy_generator = self.numpy_rng ) ) 
-        self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
+        if self._uplink_used:
+            H_RIS_Eaves_uplink = []
+            for l in range(self._num_eavesdroppers):
+                H_RIS_Eaves_uplink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
+                                                                receiver_position = self.eavesdroppers_positions[l],
+                                                                W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
+                                                                d_h_rx = self._d_h[3],
+                                                                lambda_h =  self._lambda_h,
+                                                                epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
+                                                                numpy_generator = self.numpy_rng ) ) 
+            self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
 
         pass
 
@@ -1209,21 +1367,35 @@ class RIS_Duplex(gym.Env):
             state[start_index:end_index] = 0
         
         # Continuing with the Legitimate Users-RIS-BS channel G_1u - USE CACHED
-        LU_BS_RIS = self._cached_matrix_products["LU_BS_RIS"]  # Shape: (N_r, K)
-        LU_BS_RIS_FLAT = LU_BS_RIS.flatten()
-        start_index, end_index = end_index, end_index + self.N_r *self.K
-        state[start_index:end_index] = np.real(LU_BS_RIS_FLAT) # correctly managing indexing inside the state array
-        start_index, end_index = end_index, end_index + self.N_r *self.K
-        state[start_index:end_index]  = np.imag(LU_BS_RIS_FLAT)
+        if self._uplink_used:
+            LU_BS_RIS = self._cached_matrix_products["LU_BS_RIS"]  # Shape: (N_r, K)
+            LU_BS_RIS_FLAT = LU_BS_RIS.flatten()
+            start_index, end_index = end_index, end_index + self.N_r * self.K
+            state[start_index:end_index] = np.real(LU_BS_RIS_FLAT)
+            start_index, end_index = end_index, end_index + self.N_r * self.K
+            state[start_index:end_index] = np.imag(LU_BS_RIS_FLAT)
+        else:
+            # Write zeros for UL-derived block when uplink is disabled
+            start_index, end_index = end_index, end_index + self.N_r * self.K
+            state[start_index:end_index] = 0
+            start_index, end_index = end_index, end_index + self.N_r * self.K
+            state[start_index:end_index] = 0
 
         # Continuing with the Legitimate Users-RIS-Eavesdroppers channel G_2u - USE CACHED
-        if self.eavesdropper_active :
-            LU_BS_EAVES = self._cached_matrix_products["LU_BS_EAVES"]  # Shape: (L, K)
-            LU_BS_EAVES_FLAT = LU_BS_EAVES.flatten()
-            start_index, end_index = end_index, end_index + self._num_eavesdroppers *self.K
-            state[start_index:end_index] = np.real(LU_BS_EAVES_FLAT) # correctly managing indexing inside the state array
-            start_index, end_index = end_index, end_index + self._num_eavesdroppers *self.K
-            state[start_index:end_index]  = np.imag(LU_BS_EAVES_FLAT)
+        if self.eavesdropper_active:
+            if self._uplink_used:
+                LU_BS_EAVES = self._cached_matrix_products["LU_BS_EAVES"]  # Shape: (L, K)
+                LU_BS_EAVES_FLAT = LU_BS_EAVES.flatten()
+                start_index, end_index = end_index, end_index + self._num_eavesdroppers * self.K
+                state[start_index:end_index] = np.real(LU_BS_EAVES_FLAT)
+                start_index, end_index = end_index, end_index + self._num_eavesdroppers * self.K
+                state[start_index:end_index] = np.imag(LU_BS_EAVES_FLAT)
+            else:
+                # Write zeros when uplink disabled
+                start_index, end_index = end_index, end_index + self._num_eavesdroppers * self.K
+                state[start_index:end_index] = 0
+                start_index, end_index = end_index, end_index + self._num_eavesdroppers * self.K
+                state[start_index:end_index] = 0
         else:
             start_index, end_index = end_index, end_index + 1
             state[start_index:end_index] = 0

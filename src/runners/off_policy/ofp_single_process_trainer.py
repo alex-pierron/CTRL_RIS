@@ -31,6 +31,7 @@ import numpy as np
 from copy import deepcopy
 from torch.utils.tensorboard import SummaryWriter
 from src.environment.tools import parse_args, parse_config, write_line_to_file, SituationRenderer, TaskManager
+from src.environment.physics.signal_processing import watts_to_dbm
 
 
 # Define custom VERBOSE log level (between DEBUG=10 and INFO=20)
@@ -330,6 +331,34 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         paper_average_rewards = np.zeros(max_num_step_per_episode + 1)
         instant_user_jain_fairness = np.zeros(max_num_step_per_episode + 1)
         
+        # Initialize communication rates and signal strength tracking for solo episode
+        if solo_episode:
+            # Smoothed communication rates per user (downlink, uplink, total)
+            smoothed_user_downlink_rates = np.zeros((num_users, max_num_step_per_episode))
+            smoothed_user_uplink_rates = np.zeros((num_users, max_num_step_per_episode))
+            smoothed_user_total_rates = np.zeros((num_users, max_num_step_per_episode))
+            
+            # Smoothed communication rates for eavesdroppers (max per user across eavesdroppers)
+            if using_eavesdropper:
+                smoothed_eavesdropper_downlink_rates = np.zeros((num_users, max_num_step_per_episode))
+                smoothed_eavesdropper_uplink_rates = np.zeros((num_users, max_num_step_per_episode))
+                smoothed_eavesdropper_total_rates = np.zeros((num_users, max_num_step_per_episode))
+            
+            # Signal strength tracking (min/max per user)
+            user_min_downlink_signals = np.zeros((num_users, max_num_step_per_episode))
+            user_max_downlink_signals = np.zeros((num_users, max_num_step_per_episode))
+            user_min_uplink_signals = np.zeros((num_users, max_num_step_per_episode))
+            user_max_uplink_signals = np.zeros((num_users, max_num_step_per_episode))
+            
+            if using_eavesdropper:
+                eavesdropper_min_signals = np.zeros((num_users, max_num_step_per_episode))
+                eavesdropper_max_signals = np.zeros((num_users, max_num_step_per_episode))
+        else:
+            # Team average tracking for non-solo episodes
+            team_user_rewards = []
+            team_eavesdropper_rewards = []
+            team_avg_signal_strengths = {'min': [], 'max': []}
+        
         # Initialize loss and performance tracking variables
         avg_actor_loss = 0
         avg_critic_loss = 0
@@ -416,6 +445,84 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             instant_baseline_reward = training_envs.get_basic_reward()
             basic_reward_episode[num_step] = instant_baseline_reward
 
+            # Track communication rates and signal strengths
+            if solo_episode:
+                # Get communication rates from environment
+                user_rates = training_envs.get_user_communication_rates()
+                
+                # Apply smoothing and store per-user rates
+                if num_step == 0:
+                    smoothed_user_downlink_rates[:, num_step] = user_rates['downlink']
+                    smoothed_user_uplink_rates[:, num_step] = user_rates['uplink']
+                    smoothed_user_total_rates[:, num_step] = user_rates['total']
+                else:
+                    smoothed_user_downlink_rates[:, num_step] = (
+                        reward_smoothing_factor * smoothed_user_downlink_rates[:, num_step - 1] +
+                        (1 - reward_smoothing_factor) * user_rates['downlink']
+                    )
+                    smoothed_user_uplink_rates[:, num_step] = (
+                        reward_smoothing_factor * smoothed_user_uplink_rates[:, num_step - 1] +
+                        (1 - reward_smoothing_factor) * user_rates['uplink']
+                    )
+                    smoothed_user_total_rates[:, num_step] = (
+                        reward_smoothing_factor * smoothed_user_total_rates[:, num_step - 1] +
+                        (1 - reward_smoothing_factor) * user_rates['total']
+                    )
+                
+                # Track eavesdropper rates if applicable
+                if using_eavesdropper:
+                    eavesdropper_rates = training_envs.get_eavesdropper_communication_rates()
+                    if num_step == 0:
+                        # Use max across eavesdroppers for each user
+                        smoothed_eavesdropper_downlink_rates[:, num_step] = np.max(eavesdropper_rates['downlink'], axis=1)
+                        smoothed_eavesdropper_uplink_rates[:, num_step] = np.max(eavesdropper_rates['uplink'], axis=1)
+                        smoothed_eavesdropper_total_rates[:, num_step] = eavesdropper_rates['max_per_user']
+                    else:
+                        max_dl = np.max(eavesdropper_rates['downlink'], axis=1)
+                        max_ul = np.max(eavesdropper_rates['uplink'], axis=1)
+                        smoothed_eavesdropper_downlink_rates[:, num_step] = (
+                            reward_smoothing_factor * smoothed_eavesdropper_downlink_rates[:, num_step - 1] +
+                            (1 - reward_smoothing_factor) * max_dl
+                        )
+                        smoothed_eavesdropper_uplink_rates[:, num_step] = (
+                            reward_smoothing_factor * smoothed_eavesdropper_uplink_rates[:, num_step - 1] +
+                            (1 - reward_smoothing_factor) * max_ul
+                        )
+                        smoothed_eavesdropper_total_rates[:, num_step] = (
+                            reward_smoothing_factor * smoothed_eavesdropper_total_rates[:, num_step - 1] +
+                            (1 - reward_smoothing_factor) * eavesdropper_rates['max_per_user']
+                        )
+                
+                # Track signal strengths
+                user_signals = training_envs.get_user_signal_strengths()
+                user_min_downlink_signals[:, num_step] = user_signals['min_downlink']
+                user_max_downlink_signals[:, num_step] = user_signals['max_downlink']
+                user_min_uplink_signals[:, num_step] = user_signals['min_uplink']
+                user_max_uplink_signals[:, num_step] = user_signals['max_uplink']
+                
+                if using_eavesdropper:
+                    eavesdropper_signals = training_envs.get_eavesdropper_signal_strengths()
+                    eavesdropper_min_signals[:, num_step] = eavesdropper_signals['min_across_eaves']
+                    eavesdropper_max_signals[:, num_step] = eavesdropper_signals['max_across_eaves']
+            else:
+                # Track team averages for non-solo episodes (throughout the episode)
+                team_user_rewards.append(reward_value)
+                if using_eavesdropper:
+                    team_eavesdropper_rewards.append(eavesdropper_reward)
+                
+                # Get signal strengths and compute team averages
+                user_signals = training_envs.get_user_signal_strengths()
+                # Average across all users for downlink and uplink separately, then average those
+                avg_min_signal = np.mean([
+                    np.mean(user_signals['min_downlink']), 
+                    np.mean(user_signals['min_uplink'])
+                ])
+                avg_max_signal = np.mean([
+                    np.mean(user_signals['max_downlink']), 
+                    np.mean(user_signals['max_uplink'])
+                ])
+                team_avg_signal_strengths['min'].append(avg_min_signal)
+                team_avg_signal_strengths['max'].append(avg_max_signal)
 
             # Store power patterns for visualization at specified intervals
             if use_rendering and num_step % (max_num_step_per_episode // renderer.num_frames) == 0:
@@ -508,6 +615,43 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                                      instant_user_jain_fairness[np.argmax(instant_user_rewards)], current_step)
                     if using_eavesdropper:
                         writer.add_scalar("Eavesdropper/Instant Eavesdroppers reward", eavesdropper_reward, current_step)
+                    
+                    # Log smoothed communication rates per user
+                    for k in range(num_users):
+                        writer.add_scalar(f"Communication Rates/User_{k}/Smoothed Downlink Rate", 
+                                         smoothed_user_downlink_rates[k, num_step], current_step)
+                        writer.add_scalar(f"Communication Rates/User_{k}/Smoothed Uplink Rate", 
+                                         smoothed_user_uplink_rates[k, num_step], current_step)
+                        writer.add_scalar(f"Communication Rates/User_{k}/Smoothed Total Rate", 
+                                         smoothed_user_total_rates[k, num_step], current_step)
+                    
+                    # Log eavesdropper communication rates
+                    if using_eavesdropper:
+                        for k in range(num_users):
+                            writer.add_scalar(f"Communication Rates/Eavesdropper_User_{k}/Smoothed Downlink Rate", 
+                                             smoothed_eavesdropper_downlink_rates[k, num_step], current_step)
+                            writer.add_scalar(f"Communication Rates/Eavesdropper_User_{k}/Smoothed Uplink Rate", 
+                                             smoothed_eavesdropper_uplink_rates[k, num_step], current_step)
+                            writer.add_scalar(f"Communication Rates/Eavesdropper_User_{k}/Smoothed Total Rate", 
+                                             smoothed_eavesdropper_total_rates[k, num_step], current_step)
+                    
+                    # Log signal strength evolution (min/max)
+                    for k in range(num_users):
+                        writer.add_scalar(f"Signal Strength/User_{k}/Min Downlink (dBm)", 
+                                         user_min_downlink_signals[k, num_step], current_step)
+                        writer.add_scalar(f"Signal Strength/User_{k}/Max Downlink (dBm)", 
+                                         user_max_downlink_signals[k, num_step], current_step)
+                        writer.add_scalar(f"Signal Strength/User_{k}/Min Uplink (dBm)", 
+                                         user_min_uplink_signals[k, num_step], current_step)
+                        writer.add_scalar(f"Signal Strength/User_{k}/Max Uplink (dBm)", 
+                                         user_max_uplink_signals[k, num_step], current_step)
+                    
+                    if using_eavesdropper:
+                        for k in range(num_users):
+                            writer.add_scalar(f"Signal Strength/Eavesdropper_User_{k}/Min Signal (dBm)", 
+                                             eavesdropper_min_signals[k, num_step], current_step)
+                            writer.add_scalar(f"Signal Strength/Eavesdropper_User_{k}/Max Signal (dBm)", 
+                                             eavesdropper_max_signals[k, num_step], current_step)
 
 
                 # Periodic logging of training metrics and performance statistics
@@ -895,6 +1039,21 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                              np.max(instant_user_rewards + instant_eavesdropper_rewards), episode)
             writer.add_scalar("Eavesdropper/Total Reward per episode", total_eavesdropper_reward, episode)
             writer.add_scalar("Eavesdropper/Average reward per episode", avg_eavesdropper_reward, episode)
+
+        # Log team average metrics for non-solo episodes
+        if not solo_episode:
+            if len(team_user_rewards) > 0:
+                writer.add_scalar("Team Metrics/Average User Team Reward", np.mean(team_user_rewards), episode)
+                writer.add_scalar("Team Metrics/Std User Team Reward", np.std(team_user_rewards), episode)
+                if using_eavesdropper and len(team_eavesdropper_rewards) > 0:
+                    writer.add_scalar("Team Metrics/Average Eavesdropper Team Reward", np.mean(team_eavesdropper_rewards), episode)
+                    writer.add_scalar("Team Metrics/Std Eavesdropper Team Reward", np.std(team_eavesdropper_rewards), episode)
+            
+            if len(team_avg_signal_strengths['min']) > 0:
+                writer.add_scalar("Team Metrics/Average Min Signal Strength (dBm)", 
+                                 np.mean(team_avg_signal_strengths['min']), episode)
+                writer.add_scalar("Team Metrics/Average Max Signal Strength (dBm)", 
+                                 np.mean(team_avg_signal_strengths['max']), episode)
 
 
         """np.savez(f'{log_dir}/data/test_W_matrix.npz',
