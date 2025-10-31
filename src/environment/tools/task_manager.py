@@ -353,10 +353,17 @@ class TaskManager:
             results.append(uplink_result)
 
         if self._are_eavesdroppers_used:
-            eavesdropper_result = compute_condition_result(
-                uplink_meaned, self.thresholds[1], self.num_users, for_eavesdropper=True
-            )
-            results.append(eavesdropper_result)
+            if self._is_downlink_used:
+                downlink_eavesdropper_result = compute_condition_result(
+                    downlink_meaned, self.thresholds[0], self.num_users, for_eavesdropper=True
+                )
+                results.append(downlink_eavesdropper_result)
+            
+            if self._is_uplink_used:
+                uplink_eavesdropper_result = compute_condition_result(
+                    uplink_meaned, self.thresholds[1], self.num_users, for_eavesdropper=True
+                )
+                results.append(uplink_eavesdropper_result)
 
         if not results:
             return []

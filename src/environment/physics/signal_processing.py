@@ -191,10 +191,11 @@ def computing_NLoS(W_h_t: int, W_h_r: int, numpy_generator : np.random._generato
 # ?  ----------------------------------------------     FUNCTIONS TO COMPUTE THE GAMMA TERMS FOR SINR CALCULATION    --------------------------------------------------------------
 
 
-def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
+def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
               gains_transmitter_ris_receiver,
               H_BS_RIS, H_RIS_Users, kappa_S_d,
-              H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared):
+              H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared,
+              use_inter_user_interferences: bool = True):
     """Vectorized version of Gamma_B_k function."""
     K = W.shape[1]
     
@@ -202,7 +203,7 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     indices_except_k = np.arange(K)[np.arange(K) != k]
     
     # First term: Inter-user interference - VECTORIZED
-    if len(indices_except_k) > 0:
+    if len(indices_except_k) > 0 and use_inter_user_interferences:
         # Vectorized computation for all interfering users at once
         W_except_k = W[:, indices_except_k]  # Shape: (N_t, K-1)
         interference_matrix = np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W_except_k
@@ -224,7 +225,7 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
         user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
     else:
         user_interference_not_k = 0
-    
+
     # For user k
     user_k_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
     user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
@@ -246,16 +247,17 @@ def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
 
 
 
-def Gamma_S_k(K, k, Theta_Phi,
+def Gamma_Uplink_k(K, k, Theta_Phi,
               gains_transmitter_ris_receiver,
-              H_User_RIS, H_RIS_BS, f_u_k, P_users, kappa_B_u_i, delta_k_squared):
-    """Computation of Gamma_S_k as per Peng 2022, Eq. (15)."""
+              H_User_RIS, H_RIS_BS, f_u_k, P_users, kappa_B_u_i, delta_k_squared,
+              use_inter_user_interferences: bool = True):
+    """Computation of Gamma_Downlink_k as per Peng 2022, Eq. (15)."""
     
     # Projected signal for all users through RIS and combining vector
     indices_except_k = np.arange(K)[np.arange(K) != k]
 
     # First term: interference from other users (i ≠ k) - VECTORIZED
-    if len(indices_except_k) > 0:
+    if len(indices_except_k) > 0 and use_inter_user_interferences:
         # Vectorized computation for all interfering users
         H_User_RIS_except_k = H_User_RIS[indices_except_k]  # Shape: (K-1, M, 1)
         P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
