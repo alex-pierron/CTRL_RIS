@@ -1,4 +1,4 @@
-# FAIR_RIS_AI (FRAI): Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks
+# CTRL-RIS: Investigating AI Vulnerabilities and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces in Beyond-5G and 6G Systems
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
@@ -6,7 +6,7 @@
 
 ## 🎯 Overview
 
-This repository investigates fairness vulnerabilities in AI-driven Reconfigurable Intelligent Surfaces (RIS) for Beyond 5G (B5G) and 6G communication frameworks. We focus on identifying, analyzing, and mitigating risks inherent in Reinforcement Learning (RL) control systems to ensure robust and fair implementations for next-generation wireless networks.
+This repository investigates vulnerabilities, notably fairness, in AI-driven Reconfigurable Intelligent Surfaces (RIS) for Beyond 5G (B5G) and 6G communication frameworks. We focus on identifying, analyzing, and mitigating risks inherent in Reinforcement Learning (RL) control systems to ensure robust and fair implementations for next-generation wireless networks.
 
 ### 🔬 Research Focus
 - **Fairness Analysis**: Comprehensive evaluation of AI model fairness in RIS control
