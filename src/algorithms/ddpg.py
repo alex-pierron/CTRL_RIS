@@ -520,11 +520,8 @@ class DDPG:
                         actor_loss = actor_q_values.mean()
                 self.update_target_networks(update_target_actor=False, update_target_critic = update_target_critic)
 
-        if self.gpu_used:
-            actor_loss.to('cpu')
-            critic_loss.to('cpu')
-
-        return actor_loss, critic_loss, rewards, updated_actor, updated_critic
+        # Return scalars for lighter logging/aggregation
+        return float(actor_loss.detach().cpu()), float(critic_loss.detach().cpu()), rewards, updated_actor, updated_critic
     
         
     def update_target_networks(self, update_target_actor = True, update_target_critic = True):
@@ -966,11 +963,8 @@ class Custom_DDPG:
                 self.update_target_networks(update_target_actor=False, update_target_critic = update_target_critic)
 
         #* returning infos to the CPU
-        if self.gpu_used:
-            actor_loss.to('cpu')
-            present_reward_critic_loss.to('cpu')
-
-        return actor_loss, present_reward_critic_loss, rewards, updated_actor, updated_critic
+        # Return scalars for lighter logging/aggregation
+        return float(actor_loss.detach().cpu()), float(present_reward_critic_loss.detach().cpu()), rewards, updated_actor, updated_critic
     
         
     def update_target_networks(self, update_target_actor = True, update_target_critic = True):
