@@ -1,4 +1,4 @@
-# CTRL-RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems
+# CTRL_RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
@@ -229,7 +229,7 @@ We welcome contributions from the community to enhance FAIR_RIS_AI's capabilitie
 
 ```bash
 # Fork the repository
-git clone https://github.com/your-username/FAIR_RIS_AI.git
+git clone https://github.com/alex-pierron/CTRL_RIS.git
 cd FAIR_RIS_AI
 
 # Create a feature branch
@@ -248,11 +248,11 @@ If you use FAIR_RIS_AI in your research, please cite our work using one of the f
 
 ### Software Citation (Recommended)
 ```bibtex
-@software{FAIR_RIS_AI_2025,
+@software{CTRL_RIS_2025,
   author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
-  title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
+  title = {CTRL-RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems},
   year = {2025},
-  url = {https://github.com/alex-pierron/FAIR_RIS_AI},
+  url = {https://github.com/alex-pierron/CTRL_RIS},
   version = {1.0.0},
   license = {GPL-3.0}
 }
@@ -260,12 +260,12 @@ If you use FAIR_RIS_AI in your research, please cite our work using one of the f
 
 ### Traditional Academic Citation
 ```bibtex
-@misc{FAIR_RIS_AI_2025,
+@misc{CTRL_RIS_2025,
   author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
-  title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
+  title = {CTRL_RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems},
   year = {2025},
-  howpublished = {\url{https://github.com/alex-pierron/FAIR_RIS_AI}},
-  note = {Available at: \url{https://github.com/alex-pierron/FAIR_RIS_AI}}
+  howpublished = {\url{https://github.com/alex-pierron/CTRL_RIS}},
+  note = {Available at: \url{https://github.com/alex-pierron/CTRL_RIS}}
 }
 ```
 
@@ -285,7 +285,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 **⭐ Star this repository if you find it useful!**
 
-[![GitHub stars](https://img.shields.io/github/stars/alex-pierron/FAIR_RIS_AI?style=social)](https://github.com/alex-pierron/FAIR_RIS_AI)
-[![GitHub forks](https://img.shields.io/github/forks/alex-pierron/FAIR_RIS_AI?style=social)](https://github.com/alex-pierron/FAIR_RIS_AI)
+[![GitHub stars](https://img.shields.io/github/stars/alex-pierron/CTRL_RIS?style=social)](https://github.com/alex-pierron/CTRL_RIS)
+[![GitHub forks](https://img.shields.io/github/forks/alex-pierron/CTRL_RIS?style=social)](https://github.com/alex-pierron/CTRL_RIS)
 
 </div>
