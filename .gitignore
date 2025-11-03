@@ -1,0 +1,75 @@
+# ============================
+# Python cache & build files
+# ============================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+
+# ============================
+# Testing & coverage
+# ============================
+.pytest_cache/
+tests/.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# ============================
+# Virtual environments
+# ============================
+venv/
+.env/
+env/
+.venv/
+
+# ============================
+# IDE / Editor / Notebook files
+# ============================
+.vscode/
+.idea/
+.ipynb_checkpoints/
+*.swp
+*.swo
+.DS_Store
+
+# ============================
+# Logs & temporary files
+# ============================
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# ============================
+# Data & model artifacts
+# ============================
+data/raw/
+data/interim/
+data/processed/
+data/hyperion/
+models/
+outputs/
+checkpoints/
+runs/
+mlruns/
+
+# ============================
+# Environment / secrets
+# ============================
+.env
+*.env
+*.json
+*.yaml
+*.yml
+tests/playground.ipynb
+tests/playground_2.ipynb
+legacy/
