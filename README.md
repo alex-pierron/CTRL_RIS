@@ -31,15 +31,15 @@ Conda provides isolated environments with seamless dependency management:
 
 ```bash
 # Navigate to the project directory
-cd /path/to/FAIR_RIS_AI
+cd /path/to/CTRL_RIS
 
 # For GPU users (recommended for training):
 conda env create -f requirements/GPU_environment.yml
-conda activate fair_ris_ai_env_GPU
+conda activate ctrl_ris_env_GPU
 
 # For CPU users (faster installation):
 conda env create -f requirements/CPU_environment.yml
-conda activate fair_ris_ai_env_CPU
+conda activate ctrl_ris_env_CPU
 ```
 
 #### 🐳 Option 2: Docker (Cross-platform)
@@ -48,10 +48,10 @@ For a containerized setup that works on both CPU and GPU:
 
 ```bash
 # Pull the Docker image
-docker pull ap496/fair_ris_ai
+docker pull ap496/ctrl_ris
 
 # Run the Docker container interactively
-docker run -it ap496/fair_ris_ai
+docker run -it ap496/ctrl_ris
 ```
 
 #### 🐍 Option 3: Python venv
@@ -60,17 +60,17 @@ For a lightweight virtual environment:
 
 ```bash
 # Create and activate virtual environment
-python -m venv fair_ris_env
+python -m venv ctrl_ris_env
 
 # Activate (choose your platform):
 # macOS/Linux:
-source fair_ris_env/bin/activate
+source ctrl_ris_env/bin/activate
 
 # Windows PowerShell:
-.\fair_ris_env\Scripts\Activate.ps1
+.\ctrl_ris_env\Scripts\Activate.ps1
 
 # Windows CMD:
-.\fair_ris_env\Scripts\activate.bat
+.\ctrl_ris_env\Scripts\activate.bat
 
 # Install dependencies
 pip install --upgrade pip
@@ -148,7 +148,7 @@ For more complex experiments, you can:
 ## 📁 Repository Structure
 
 ```
-FAIR_RIS_AI/
+CTRL_RIS/
 ├── 📊 data/                          # Experimental data and results
 │   ├── analytics/                    # Analysis results and visualizations
 │   ├── archived_experiments/         # Historical experiment data
@@ -215,7 +215,7 @@ FAIR_RIS_AI/
 
 ## 🤝 Contributing
 
-We welcome contributions from the community to enhance FAIR_RIS_AI's capabilities and robustness. Your contributions help advance research in AI fairness for next-generation wireless networks.
+We welcome contributions from the community to enhance CTRL_RIS's capabilities and robustness. Your contributions help advance research in AI fairness for next-generation wireless networks.
 
 ### How to Contribute
 
@@ -230,7 +230,7 @@ We welcome contributions from the community to enhance FAIR_RIS_AI's capabilitie
 ```bash
 # Fork the repository
 git clone https://github.com/alex-pierron/CTRL_RIS.git
-cd FAIR_RIS_AI
+cd CTRL_RIS
 
 # Create a feature branch
 git checkout -b feature/your-feature-name
@@ -244,7 +244,7 @@ git push origin feature/your-feature-name
 
 ## 📚 Citation
 
-If you use FAIR_RIS_AI in your research, please cite our work using one of the following formats:
+If you use CTRL_RIS in your research, please cite our work using one of the following formats:
 
 ### Software Citation (Recommended)
 ```bibtex
