@@ -1,4 +1,4 @@
-# CTRL-RIS: Investigating AI Vulnerabilities and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces in Beyond-5G and 6G Systems
+# CTRL-RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
