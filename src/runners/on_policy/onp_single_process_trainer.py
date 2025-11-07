@@ -29,6 +29,10 @@ import numpy as np
 from copy import deepcopy
 from torch.utils.tensorboard import SummaryWriter
 from src.environment.tools import parse_args, parse_config, write_line_to_file, SituationRenderer, TaskManager
+from src.runners.on_policy.onp_single_process_trainer_helpers import (
+    log_position_message,
+    create_episode_summary_messages
+)
 
 
 # Define a new log level (between DEBUG=10 and INFO=20)
@@ -104,12 +108,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         batch_instead_of_buff: Boolean flag (unused for on-policy, kept for compatibility).
         use_rendering: Boolean to know if a rendering tool is needed.
     """
-    # NOTE: Dedicated logger for this run; messages at VERBOSE level go to file only
+    # ========================================================================
+    # INITIALIZATION
+    # ========================================================================
     logger = setup_logger(log_dir)
-
     env_config = training_envs.env_config
 
-    # Extract training configuration parameters from the provided config dictionary
+    # Training configuration
     debugging = training_config.get("debugging", False)
     num_episode = training_config.get("number_episodes", 15)
     max_num_step_per_episode = training_config.get("max_steps_per_episode", 20000)
@@ -117,56 +122,48 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
     frequency_information = training_config.get("frequency_information", 500)
     saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
     plot_saving_frequency = training_config.get("plot_save_checkpoint_frequency", 100)
+    curriculum_learning = training_config.get("Curriculum_Learning", True)
     
+    # Evaluation configuration
     conduct_eval = eval_env is not None
     episode_per_eval = training_config.get("episode_per_eval_env", 1) if conduct_eval else None
     eval_period = training_config.get("eval_period", 1) if conduct_eval else None
-
-    curriculum_learning = training_config.get("Curriculum_Learning", True)
+    
+    # Environment metadata
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
 
+    # Curriculum learning setup
     if curriculum_learning:
-        # NOTE: TaskManager encapsulates curriculum generation and episode outcomes
         grid_limit = env_config.get("user_spawn_limits")
         downlink_activated = env_config.get("BS_max_power") > 0
         uplink_activated = env_config.get("user_transmit_power") > 0
-        Task_Manager = TaskManager(num_users,
-                                   num_steps_per_episode = max_num_step_per_episode,
-                                   user_limits=  grid_limit ,
-                                   RIS_position= env_config.get("RIS_position"),
-                                   downlink_uplink_eavesdropper_bools= [downlink_activated, uplink_activated, using_eavesdropper],
-                                   thresholds = training_config.get("Curriculum_Learning_Thresholds", [0.5,0.5]),
-                                   random_seed = training_config.get("Task_Manager_random_seed", 126) )
+        Task_Manager = TaskManager(
+            num_users,
+            num_steps_per_episode=max_num_step_per_episode,
+            user_limits=grid_limit,
+            RIS_position=env_config.get("RIS_position"),
+            downlink_uplink_eavesdropper_bools=[downlink_activated, uplink_activated, using_eavesdropper],
+            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.5, 0.5]),
+            random_seed=training_config.get("Task_Manager_random_seed", 126)
+        )
 
+    # Rollout buffer configuration
     rollout_size = getattr(network.rollout, 'buffer_size', training_config.get('rollout_size', 2048))
 
-    # Initialize variables to track training progress
+    # Training state tracking
     best_average_reward = -np.inf
-    best_instant_reward = -np.inf
     total_steps = 0
-
     optim_count = 0
-
-    # Initialize arrays for trajectory tracking
+    
+    # Trajectory tracking
     users_trajectory = np.zeros((num_episode, training_envs.num_users, 2))
     eavesdroppers_trajectory = np.zeros((num_episode, training_envs.num_eavesdroppers, 2))
-
-    # Initialize renderer data if rendering is activated
-    if use_rendering:
-        best_power_patterns = {
-            "downlink_power_patterns": [],
-            "uplink_power_patterns": [],
-            "W_power_patterns": [],
-            "rewards": [],
-            "steps": [],
-            "user_positions": [],
-            "eavesdroppers_positions": []
-        }
-
     average_reward_per_env = np.zeros(num_episode)
 
-    # === Main training loop over episodes ===
+    # ========================================================================
+    # MAIN TRAINING LOOP
+    # ========================================================================
     for episode in tqdm(range(num_episode), 
                        desc="[TRAIN] TRAINING", 
                        position=1, 
@@ -200,19 +197,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             eavesdroppers_positions = None
 
         # Log starting positions
-        if using_eavesdropper:
-            position_message = (
-                f"\nCommencing training episode {episode} with users and eavesdroppers positions:\n"
-                f"   !~ Users Positions: {list(users_position)} \n"
-                f"   !~ Eavesdroppers Positions: {list(eavesdroppers_positions)} \n"
-            )
-        else:
-            position_message = (
-                f"\nCommencing training episode {episode} with users positions:\n"
-                f"   !~ Users Positions: {list(users_position)} \n"
-            )
-
-        logger.verbose(position_message)
+        log_position_message(logger, episode, users_position, eavesdroppers_positions, using_eavesdropper)
 
         # Initialize arrays to track rewards and losses for the episode
         instant_user_rewards = np.zeros(max_num_step_per_episode) - np.inf
@@ -480,53 +465,30 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             network.save_models(ckpt_dir)
             logger.info(f"Saved checkpoint for episode {episode}")
 
-        # NOTE: Log episode summary (console + file)
+        # Create and display episode summary messages
         episode_max_instant_reward_reached = max(instant_user_rewards) if len(valid_rewards) > 0 else 0.0
+        best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0
+        best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper and len(valid_rewards) > 0 else None
         
+        console_message, log_message = create_episode_summary_messages(
+            episode=episode,
+            optim_steps=optim_count,
+            users_position=users_position,
+            eavesdroppers_positions=eavesdroppers_positions,
+            avg_reward=avg_reward_episode,
+            max_reward=episode_max_instant_reward_reached,
+            avg_fairness=avg_fairness_episode,
+            best_fairness=best_fairness,
+            avg_actor_loss=avg_actor_loss,
+            avg_critic_loss=avg_critic_loss,
+            basic_reward_episode=basic_reward_episode,
+            instant_user_rewards=instant_user_rewards,
+            additional_information_best_case=additional_information_best_case,
+            using_eavesdropper=using_eavesdropper,
+            avg_eaves_reward=avg_eaves_reward if using_eavesdropper else None,
+            best_eaves_reward=best_eaves_reward
+        )
         
-        # Create console message for episode summary (with emojis)
-        console_message = (
-            f"\n\n"
-            f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
-            f"║ 🎯 ON-POLICY TRAINING EPISODE #{episode:3d} │ 🧠 Optimizations: {optim_count:4d} ║\n"
-            f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
-            f"║ 📍 POSITIONING:\n"
-            f"║    User Equipment Positions: {users_position}\n"
-            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-            f"║ 🏆 REWARDS:\n"
-            f"║    • Average Reward: {avg_reward_episode:8.4f} │ Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
-            f"║    • Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} │ Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
-            f"║    • Detailed Baseline Reward: {additional_information_best_case}\n"
-            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-            f"║ ⚖️  FAIRNESS:\n"
-            f"║    • Average Fairness: {avg_fairness_episode:8.4f} │ Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
-            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-            f"║ 📊 PERFORMANCE:\n"
-            f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
-        )
-
-        # Create ASCII version for file logging
-        log_message = (
-            f"\n+====================================================================================================+\n"
-            f"| [TRAIN] ON-POLICY EPISODE #{episode:3d} | Optimizations: {optim_count:4d} |\n"
-            f"+====================================================================================================+\n"
-            f"| POSITIONING:\n"
-            f"|    User Equipment Positions: {users_position}\n"
-            f"| ---------------------------------------------------------------------------------------------------- |\n"
-            f"| REWARDS:\n"
-            f"|    * Average Reward: {avg_reward_episode:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
-            f"|    * Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} | Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
-            f"|    * Detailed Baseline Reward: {additional_information_best_case}\n"
-            f"| ---------------------------------------------------------------------------------------------------- |\n"
-            f"| FAIRNESS:\n"
-            f"|    * Average Fairness: {avg_fairness_episode:8.4f} | Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:8.4f}\n"
-            f"| ---------------------------------------------------------------------------------------------------- |\n"
-            f"| PERFORMANCE:\n"
-            f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"+====================================================================================================+\n"
-        )
-
         tqdm.write(console_message)
         logger.verbose(log_message)
 
