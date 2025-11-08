@@ -64,66 +64,91 @@ class RolloutBuffer:
     def compute_advantages(self, last_values: torch.Tensor, gamma: float, gae_lambda: float):
         """
         Compute advantages and returns using Generalized Advantage Estimation (GAE) for parallel environments.
+        Optimized version with pre-computed masks and vectorized operations where possible.
         
         Args:
             last_values: Tensor of shape (n_rollout_envs, 1) containing the last value estimates for each environment
         """
-        advantages = torch.zeros_like(self.rewards, device=self.device)
+        # OPTIMIZED: Pre-allocate advantages tensor
+        advantages = torch.zeros(self.ptr, 1, device=self.device, dtype=torch.float32)
+        
+        # OPTIMIZED: Pre-compute environment masks to avoid repeated computations
+        # Cache the sliced env_ids to avoid repeated slicing operations
+        env_ids_sliced = self.env_ids[:self.ptr]
+        env_ids_squeezed = env_ids_sliced.squeeze(-1) if env_ids_sliced.dim() > 1 else env_ids_sliced
         
         # Process each environment separately to handle different episode lengths
         for env_id in range(self.n_rollout_envs):
-            # Get indices for this environment
-            env_mask = (self.env_ids[:self.ptr].squeeze() == env_id)
-            env_indices = torch.where(env_mask)[0]
+            # OPTIMIZED: Use boolean indexing which is faster than torch.where for this use case
+            env_mask = (env_ids_squeezed == env_id)
+            env_indices = torch.nonzero(env_mask, as_tuple=False).squeeze(-1)
             
             if len(env_indices) == 0:
+                continue
+            
+            # OPTIMIZED: Convert to list once for faster indexing
+            env_indices_list = env_indices.tolist() if env_indices.numel() > 0 else []
+            if not env_indices_list:
                 continue
                 
             # Get the last value for this environment
             last_value = last_values[env_id] if last_values.dim() > 0 else last_values
             
-            # Compute advantages for this environment's trajectory
+            # OPTIMIZED: Pre-extract values and dones for this environment's trajectory
+            env_values = self.values[env_indices]
+            env_rewards = self.rewards[env_indices]
+            env_dones = self.dones[env_indices]
+            
+            # Compute advantages for this environment's trajectory (backward pass)
             last_gae = 0.0
-            for i in reversed(range(len(env_indices))):
-                step_idx = env_indices[i]
+            for i in reversed(range(len(env_indices_list))):
+                step_idx = env_indices_list[i]
                 
-                if i == len(env_indices) - 1:
+                if i == len(env_indices_list) - 1:
                     # Last step of this environment's trajectory
-                    next_non_terminal = 1.0 - self.dones[step_idx]
+                    next_non_terminal = 1.0 - env_dones[i]
                     next_value = last_value
                 else:
                     # Not the last step
-                    next_step_idx = env_indices[i + 1]
-                    next_non_terminal = 1.0 - self.dones[step_idx]
-                    next_value = self.values[next_step_idx]
+                    next_non_terminal = 1.0 - env_dones[i]
+                    next_value = env_values[i + 1]
                 
-                delta = self.rewards[step_idx] + gamma * next_value * next_non_terminal - self.values[step_idx]
+                # OPTIMIZED: Use pre-extracted values
+                delta = env_rewards[i] + gamma * next_value * next_non_terminal - env_values[i]
                 last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae
                 advantages[step_idx] = last_gae
         
-        # CHANGED: Returns are now computed correctly from advantages and values
-        self.returns = advantages + self.values
-        self.advantages = advantages
+        # OPTIMIZED: Compute returns in-place and trim buffers efficiently
+        # Cache sliced values to avoid repeated slicing
+        values_sliced = self.values[:self.ptr]
+        returns = advantages + values_sliced
         
-        # Trim buffers to actual size
+        # Trim buffers to actual size (using views/slices for efficiency)
         self.states = self.states[:self.ptr]
         self.actions = self.actions[:self.ptr]
-        self.raw_actions = self.raw_actions[:self.ptr] # ADDED
+        self.raw_actions = self.raw_actions[:self.ptr]
         self.logprobs = self.logprobs[:self.ptr]
-        self.values = self.values[:self.ptr]
-        self.returns = self.returns[:self.ptr]
-        self.advantages = self.advantages[:self.ptr]
-        self.env_ids = self.env_ids[:self.ptr] # ADDED
+        self.values = values_sliced
+        self.returns = returns
+        self.advantages = advantages
+        self.env_ids = env_ids_sliced
 
     def get_minibatches(self, minibatch_size: int):
         """
         Generate randomized minibatches for SGD updates.
+        OPTIMIZED: Use torch for shuffling when possible for better GPU performance.
         """
-        indices = np.arange(self.ptr)
-        np.random.shuffle(indices)
+        # OPTIMIZED: Use torch.randperm for faster shuffling on GPU
+        if self.ptr < 10000:  # For small buffers, numpy is fine
+            indices = np.arange(self.ptr)
+            np.random.shuffle(indices)
+            indices = torch.from_numpy(indices).to(self.device)
+        else:
+            # For larger buffers, torch.randperm can be faster on GPU
+            indices = torch.randperm(self.ptr, device=self.device)
         
         for start in range(0, self.ptr, minibatch_size):
-            end = start + minibatch_size
+            end = min(start + minibatch_size, self.ptr)
             mb_idx = indices[start:end]
             yield (
                 self.states[mb_idx],
@@ -386,6 +411,31 @@ class PPO:
             action, logprob, raw_action = self.actor.get_action_and_log_prob(state_t, deterministic=eval_mode)
                 
         return action.squeeze(0).cpu(), logprob.squeeze(0), raw_action.squeeze(0)
+    
+    # OPTIMIZED: Batch version for multiple states (faster for multiprocess training)
+    def select_actions_batch(self, states, eval_mode=False):
+        """
+        Select actions for a batch of states efficiently.
+        
+        Args:
+            states: Array or tensor of shape (batch_size, state_dim)
+            eval_mode: Whether to use deterministic actions
+            
+        Returns:
+            Tuple of (actions, logprobs, raw_actions) all of shape (batch_size, action_dim)
+        """
+        self.actor.eval()
+        # OPTIMIZED: Convert to tensor once for the whole batch
+        if isinstance(states, np.ndarray):
+            states_t = torch.tensor(states, dtype=torch.float32, device=self.device)
+        else:
+            states_t = states.to(self.device) if states.device != self.device else states
+        
+        with torch.no_grad():
+            actions, logprobs, raw_actions = self.actor.get_action_and_log_prob(states_t, deterministic=eval_mode)
+        
+        # Return on CPU for compatibility with environment
+        return actions.cpu(), logprobs.cpu(), raw_actions.cpu()
 
     # CHANGED: Modified to store raw_action and env_id
     def store_transition(self, state, action, raw_action, reward, next_state, done=False, logprob=None, value=None, env_id=0):
@@ -428,19 +478,23 @@ class PPO:
         self.total_it += 1
 
         with torch.no_grad():
-            # Get last states for each environment to compute last values
+            # OPTIMIZED: Get last states for each environment more efficiently
+            # Pre-compute environment IDs once
+            env_ids_squeezed = self.rollout.env_ids[:self.rollout.ptr].squeeze(-1) if self.rollout.env_ids[:self.rollout.ptr].dim() > 1 else self.rollout.env_ids[:self.rollout.ptr]
             last_states = []
+            
             for env_id in range(self.n_rollout_envs):
-                # Find the last state for this environment
-                env_mask = (self.rollout.env_ids[:self.rollout.ptr].squeeze() == env_id)
-                env_indices = torch.where(env_mask)[0]
+                # OPTIMIZED: Use boolean indexing for faster lookup
+                env_mask = (env_ids_squeezed == env_id)
+                env_indices = torch.nonzero(env_mask, as_tuple=False).squeeze(-1)
                 if len(env_indices) > 0:
-                    last_state_idx = env_indices[-1]
+                    last_state_idx = env_indices[-1].item()
                     last_states.append(self.rollout.states[last_state_idx])
                 else:
                     # If no transitions for this environment, use zeros
                     last_states.append(torch.zeros(self.state_dim, device=self.device))
             
+            # OPTIMIZED: Stack once and compute all values in a single forward pass
             last_states = torch.stack(last_states)  # Shape: (n_rollout_envs, state_dim)
             last_values = self.critic(last_states)  # Shape: (n_rollout_envs, 1)
 

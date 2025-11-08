@@ -268,8 +268,10 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             instant_user_jain_fairness[num_step] = training_envs.get_user_jain_fairness()
             basic_reward_episode[num_step] = training_envs.get_basic_reward()
             
-            # Track cumulative rewards and averages
-            total_reward = np.sum(instant_user_rewards[instant_user_rewards > -np.inf])
+            # OPTIMIZED: Track cumulative rewards and averages more efficiently
+            # Only compute valid rewards mask once per step
+            valid_mask = instant_user_rewards > -np.inf
+            total_reward = np.sum(instant_user_rewards[valid_mask])
             avg_reward = total_reward / (num_step + 1)
             average_rewards[num_step] = avg_reward
             if num_step > 1:
@@ -343,24 +345,29 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 W = training_envs.get_W()
                 total_power_deployed = round(np.trace(np.diag(np.diag(W @ W.conj().T)).real), 4)
 
-                # Calculate local metrics over the last `frequency_information` steps
-                local_rewards = instant_user_rewards[max(0, num_step + 1 - frequency_information): num_step + 1]
+                # OPTIMIZED: Calculate local metrics over the last `frequency_information` steps
+                # Pre-compute slice indices once
+                start_idx = max(0, num_step + 1 - frequency_information)
+                end_idx = num_step + 1
+                
+                local_rewards = instant_user_rewards[start_idx:end_idx]
                 valid_local_rewards = local_rewards[local_rewards > -np.inf]
                 local_average_reward = np.mean(valid_local_rewards) if len(valid_local_rewards) > 0 else 0.0
                 
-                local_basic_rewards = basic_reward_episode[max(0, num_step + 1 - frequency_information): num_step + 1]
+                local_basic_rewards = basic_reward_episode[start_idx:end_idx]
                 local_average_basic_reward = np.mean(local_basic_rewards)
                 
-                local_fairness = instant_user_jain_fairness[max(0, num_step + 1 - frequency_information): num_step + 1]
+                local_fairness = instant_user_jain_fairness[start_idx:end_idx]
                 local_user_fairness = round(np.mean(local_fairness), ndigits=4)
 
                 # Log comprehensive TensorBoard metrics
+                # OPTIMIZED: Reuse pre-computed slice indices
                 writer.add_scalar("Rewards/Local Average Reward", local_average_reward, total_steps)
-                writer.add_histogram("Rewards/Paper Average Reward", paper_average_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
+                writer.add_histogram("Rewards/Paper Average Reward", paper_average_rewards[start_idx:end_idx], total_steps)
                 writer.add_scalar("Rewards/Global Average Reward", avg_reward, total_steps)
                 writer.add_scalar("Rewards/Max Instant Reward", np.max(instant_user_rewards), total_steps)
                 writer.add_scalar("Rewards/Local Average Baseline Reward", local_average_basic_reward, total_steps)
-                writer.add_histogram("Rewards/Instant reward", instant_user_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
+                writer.add_histogram("Rewards/Instant reward", instant_user_rewards[start_idx:end_idx], total_steps)
 
                 # Calculate current average losses
                 current_avg_actor_loss = avg_actor_loss_episode / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
@@ -375,14 +382,15 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 writer.add_scalar("General/Power deployed (Watts)", total_power_deployed, total_steps)
 
                 if using_eavesdropper:
+                    # OPTIMIZED: Reuse pre-computed slice indices
                     reward_combined = instant_user_rewards + instant_eavesdropper_rewards
-                    local_average_reward_combined = np.mean(reward_combined[max(0, num_step + 1 - frequency_information): num_step + 1])
+                    local_average_reward_combined = np.mean(reward_combined[start_idx:end_idx])
                     writer.add_scalar("General/Local average total SSR", local_average_reward_combined, total_steps)
 
-                    local_eaves_rewards = instant_eavesdropper_rewards[max(0, num_step + 1 - frequency_information): num_step + 1]
+                    local_eaves_rewards = instant_eavesdropper_rewards[start_idx:end_idx]
                     local_average_eavesdropper_reward = np.mean(local_eaves_rewards)
                     writer.add_scalar("Eavesdropper/Local average reward", local_average_eavesdropper_reward, total_steps)
-                    writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
+                    writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[start_idx:end_idx], total_steps)
 
                 message = (
                     f"\n|--> ON-POLICY TRAINING EPISODE {episode}, STEP {num_step + 1}\n"

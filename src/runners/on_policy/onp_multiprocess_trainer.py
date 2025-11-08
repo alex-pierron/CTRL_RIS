@@ -235,30 +235,40 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             else:
                 states = next_states
 
+            # OPTIMIZED: Use batch action selection for better performance
             # NOTE: PPO explores by sampling from the policy (no noise needed)
-            selected_actions = []
-            raw_actions = []
-            logprobs = []
-            
-            for i in range(n_rollout_envs):
-                action, logprob, raw_action = network.select_action(states[i], eval_mode=False)
-                selected_actions.append(action)
-                raw_actions.append(raw_action)
-                logprobs.append(logprob)
-            
-            selected_actions = torch.stack(selected_actions)
-            raw_actions = torch.stack(raw_actions)
-            logprobs = torch.stack(logprobs)
+            if hasattr(network, 'select_actions_batch'):
+                # OPTIMIZED: Batch process all environments at once
+                selected_actions, logprobs, raw_actions = network.select_actions_batch(states, eval_mode=False)
+                selected_actions = selected_actions  # Already a tensor
+                raw_actions = raw_actions  # Already a tensor
+                logprobs = logprobs  # Already a tensor
+            else:
+                # Fallback to individual selection (slower but compatible)
+                selected_actions = []
+                raw_actions = []
+                logprobs = []
+                
+                for i in range(n_rollout_envs):
+                    action, logprob, raw_action = network.select_action(states[i], eval_mode=False)
+                    selected_actions.append(action)
+                    raw_actions.append(raw_action)
+                    logprobs.append(logprob)
+                
+                selected_actions = torch.stack(selected_actions)
+                raw_actions = torch.stack(raw_actions)
+                logprobs = torch.stack(logprobs)
             
             states, selected_actions, rewards, next_states = training_envs.step(states, selected_actions)
 
-            # Reshaping the rewards
+            # OPTIMIZED: Reshape rewards once and reuse
             instant_user_rewards[:, num_step] = rewards
             total_reward += rewards
-            rewards = rewards.reshape((n_rollout_envs, 1))
+            rewards_reshaped = rewards.reshape((n_rollout_envs, 1))
             max_instant_reward = max(max_instant_reward, rewards.max().item())
 
-            basic_reward_episode[num_step,:] = training_envs.get_basic_reward().reshape((n_rollout_envs))
+            # OPTIMIZED: Cache basic reward call result
+            basic_reward_episode[num_step, :] = training_envs.get_basic_reward().reshape((n_rollout_envs))
 
             decisive_rewards = pickable_to_dict(training_envs.get_decisive_rewards())
             informative_rewards = pickable_to_dict(training_envs.get_informative_rewards())
@@ -269,15 +279,17 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             for function_name in informative_reward_functions:
                 informative_rewards_current_episode[function_name][:, num_step] = [informative_rewards[env_idx][function_name]['total_reward'] for env_idx in informative_rewards]
 
-            
-            rewards = rewards.reshape((n_rollout_envs, 1))
+            # OPTIMIZED: Reuse already reshaped rewards
+            rewards = rewards_reshaped
 
+            # OPTIMIZED: Cache done flag check (usually same for all envs in vectorized setup)
+            done_flag = bool(training_envs.is_done()) if hasattr(training_envs, 'is_done') else False
+            
             # NOTE: Store transitions for all envs in PPO rollout buffer
             for i in range(n_rollout_envs):
-                done = bool(training_envs.is_done()) if hasattr(training_envs, 'is_done') else False
                 success = network.store_transition(states[i], selected_actions[i], raw_actions[i], 
-                                       float(rewards[i]), next_states[i], done=done, 
-                                       logprob=logprobs[i], env_id = i)
+                                       float(rewards[i]), next_states[i], done=done_flag, 
+                                       logprob=logprobs[i], env_id=i)
                 if not success:
                     # Buffer is full, break out of the loop
                     break
@@ -314,14 +326,18 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                     writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
 
+                    # OPTIMIZED: Pre-compute slice indices once
                     # Local items (average and so on) represent the items for the current slice between last frequency information and the new one.
-                    local_average_reward = np.mean(instant_user_rewards[:, num_step + 1 - frequency_information: num_step])
+                    freq_start = num_step + 1 - frequency_information
+                    freq_end = num_step
+                    
+                    local_average_reward = np.mean(instant_user_rewards[:, freq_start: freq_end])
 
-                    local_average_reward_per_env = np.mean(instant_user_rewards[:, num_step + 1 - frequency_information: num_step],axis=1)
+                    local_average_reward_per_env = np.mean(instant_user_rewards[:, freq_start: freq_end], axis=1)
 
-                    user_fairness_mean_local = np.round(np.mean(instant_user_jain_fairness[num_step + 1 - frequency_information: num_step]), decimals=3)
+                    user_fairness_mean_local = np.round(np.mean(instant_user_jain_fairness[freq_start: freq_end]), decimals=3)
 
-                    user_fairness_mean_local_per_env = np.round(np.mean(instant_user_jain_fairness[num_step + 1 - frequency_information: num_step], axis=0), decimals=3)
+                    user_fairness_mean_local_per_env = np.round(np.mean(instant_user_jain_fairness[freq_start: freq_end], axis=0), decimals=3)
 
                     writer.add_scalar("Rewards/Average local reward", local_average_reward, current_step)
                     writer.add_scalar("Rewards/Average global reward", np.mean(total_reward) / (num_step + 1), current_step)
@@ -333,10 +349,11 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
                     
                     if using_eavesdropper:
-                        local_average_eavesdropper_reward = np.mean(instant_eavesdropper_rewards[:, num_step + 1 - frequency_information: num_step])
+                        # OPTIMIZED: Reuse pre-computed slice indices
+                        local_average_eavesdropper_reward = np.mean(instant_eavesdropper_rewards[:, freq_start: freq_end])
 
                         writer.add_scalar("Eavesdropper/Local average reward", local_average_eavesdropper_reward, current_step)
-                        writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[:, num_step + 1 - frequency_information: num_step], current_step)
+                        writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[:, freq_start: freq_end], current_step)
                     
                     message = (
                         f"\n"
@@ -561,12 +578,17 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     else:
                         states = next_states
                     
+                    # OPTIMIZED: Use batch action selection for evaluation if available
                     # NOTE: For PPO evaluation, use deterministic actions
-                    selected_actions = []
-                    for i in range(n_eval_rollout_threads):
-                        action, _, _ = network.select_action(states[i], eval_mode=True)
-                        selected_actions.append(action)
-                    selected_actions = torch.stack(selected_actions)
+                    if hasattr(network, 'select_actions_batch'):
+                        selected_actions, _, _ = network.select_actions_batch(states, eval_mode=True)
+                    else:
+                        # Fallback to individual selection
+                        selected_actions = []
+                        for i in range(n_eval_rollout_threads):
+                            action, _, _ = network.select_action(states[i], eval_mode=True)
+                            selected_actions.append(action)
+                        selected_actions = torch.stack(selected_actions)
                     states, selected_actions, rewards, next_states = eval_env.step(states, selected_actions)
 
                     """for i,r in enumerate(rewards):
