@@ -559,7 +559,7 @@ class SAC:
             actor_loss = actor_loss.to('cpu')
             critic1_loss = critic1_loss.to('cpu')
 
-        return (actor_loss, critic1_loss, rewards, updated_actor, updated_critic)
+        return float(actor_loss.detach().cpu()), float(critic1_loss.detach().cpu()), rewards, updated_actor, updated_critic
 
     def update_target_networks(self, update_target_critics=True):
         """

@@ -32,6 +32,10 @@ from copy import deepcopy
 from torch.utils.tensorboard import SummaryWriter
 from src.environment.tools import parse_args, parse_config, write_line_to_file, SituationRenderer, TaskManager
 from src.environment.physics.signal_processing import watts_to_dbm
+from src.runners.off_policy.ofp_single_process_trainer_helpers import (
+    log_position_message,
+    create_episode_summary_messages
+)
 
 
 # Define custom VERBOSE log level (between DEBUG=10 and INFO=20)
@@ -132,45 +136,36 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         curriculum learning for progressive difficulty adjustment, and provides
         comprehensive visualization capabilities through rendering.
     """
-    # Initialize dedicated logger for this training session
-    # VERBOSE level messages are written to file but not displayed in console
+    # ========================================================================
+    # INITIALIZATION
+    # ========================================================================
     logger = setup_logger(log_dir)
-
-    # Extract environment configuration
     env_config = training_envs.env_config
 
-    # Parse training configuration parameters with sensible defaults
+    # Training configuration
     debugging = training_config.get("debugging", False)
-    env_debugging = env_config.get("debugging", False)
     num_episode = training_config.get("number_episodes", 15)
     solo_episode = num_episode == 1
     max_num_step_per_episode = training_config.get("max_steps_per_episode", 20000)
     reward_smoothing_factor = training_config.get("reward_smoothing_factor", 0.5)
     batch_size = training_config.get("batch_size", 128)
     frequency_information = training_config.get("frequency_information", 500)
+    saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
+    plot_saving_frequency = training_config.get("plot_save_checkpoint_frequency", 100)
+    curriculum_learning = training_config.get("Curriculum_Learning", False)
+    noise_scale = training_config.get("noise_scale", 0.1)
     
     # Evaluation configuration
     conduct_eval = eval_env is not None
     episode_per_eval = training_config.get("episode_per_eval_env", 1) if conduct_eval else None
     eval_period = training_config.get("eval_period", 1) if conduct_eval else None
     
-    # Model and plot saving configuration
-    saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
-    plot_saving_frequency = training_config.get("plot_save_checkpoint_frequency", 100)
-
-    # Curriculum learning enables progressive difficulty adjustment
-    curriculum_learning = training_config.get("Curriculum_Learning", False)
-    
-    # Action noise configuration for exploration
-    noise_scale = training_config.get("noise_scale", 0.1)
-    
-    # Extract environment metadata
+    # Environment metadata
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
 
-    # Initialize curriculum learning system if enabled
+    # Curriculum learning setup
     if curriculum_learning:
-        # TaskManager handles progressive difficulty scheduling
         grid_limit = env_config.get("user_spawn_limits")
         downlink_activated = env_config.get("BS_max_power") > 0
         uplink_activated = env_config.get("user_transmit_power") > 0
@@ -185,56 +180,36 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             random_seed=training_config.get("Task_Manager_random_seed", 126)
         )
 
-    # Determine buffer size based on training mode
+    # Buffer configuration
     buffer_size = deepcopy(batch_size) if batch_instead_of_buff else network.replay_buffer.buffer_size
-
-    # Initialize training state variables
-    index_episode_buffer_filled = None
-    users_trajectory = np.zeros((num_episode, training_envs.num_users, 2))
-    eavesdroppers_trajectory = np.zeros((num_episode, training_envs.num_eavesdroppers, 2))
-
-    # Evaluation tracking variables
-    num_eval_periode = 0
-    eval_current_step = 0
-
-    # Training progress tracking
-    buffer_filled = False
-    best_average_reward = 0
-
-    # Eavesdropper positions are only relevant when eavesdroppers are present
-    if not using_eavesdropper:
-        eavesdroppers_positions = None
-        
-    # Initialize rendering data structures if visualization is enabled
-    if use_rendering:
-        best_power_patterns = {
-            "theta_power_pattern": [],
-            "theta_phi_power_pattern": [],
-            "W_power_pattern": [],
-            "rewards": [],
-            "steps": [],
-            "user_positions": [],
-            "eavesdroppers_positions": []
-        }
-
-    # Initialize optimization step counters
-    optim_steps_actor = 0
-    optim_steps_critic = 0
-    average_reward_per_env = np.zeros(num_episode)
-    smoothed_average_fairness = np.zeros(num_episode)
-
-    # Configure replay buffer filling progress tracking
-    # TODO: Optimize buffer progress bar management for better performance
-    buffer_bar_finished = False
-    buffer_number_of_required_episode = buffer_size // (max_num_step_per_episode)
-    buffer_smaller_than_one_episode = (buffer_size // (max_num_step_per_episode) < 1)
-    length_episode_rb_matching = ((buffer_size % (max_num_step_per_episode)) == 0)
-    
-    # Ensure minimum buffer filling episodes
+    buffer_number_of_required_episode = buffer_size // max_num_step_per_episode
     if buffer_number_of_required_episode == 0:
         buffer_number_of_required_episode = 1
+    buffer_smaller_than_one_episode = (buffer_size // max_num_step_per_episode < 1)
+    length_episode_rb_matching = ((buffer_size % max_num_step_per_episode) == 0)
 
-    # Initialize progress bar for replay buffer warmup phase
+    # Training state tracking
+    buffer_filled = False
+    index_episode_buffer_filled = None
+    best_average_reward = 0
+    optim_steps_actor = 0
+    optim_steps_critic = 0
+    
+    # Trajectory tracking
+    users_trajectory = np.zeros((num_episode, training_envs.num_users, 2))
+    eavesdroppers_trajectory = np.zeros((num_episode, training_envs.num_eavesdroppers, 2))
+    average_reward_per_env = np.zeros(num_episode)
+    smoothed_average_fairness = np.zeros(num_episode)
+    
+    # Evaluation tracking
+    num_eval_periode = 0
+    eval_current_step = 0
+    
+    # Eavesdropper positions (initialized per episode)
+    eavesdroppers_positions = None
+
+    # Replay buffer progress bar
+    buffer_bar_finished = False
     filling_buffer_progress_bar = (
         tqdm(
             total=buffer_number_of_required_episode,
@@ -290,37 +265,12 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                 "steps": [],
             }
 
-        # Create position logging message based on training phase
-        if buffer_filled:
-            if using_eavesdropper:
-                position_message = (
-                    f"\nCommencing training episode {episode-buffer_number_of_required_episode} with users and eavesdroppers positions:\n"
-                    f"   !~ Users Positions: {list(users_position)} \n"
-                    f"   !~ Eavesdroppers Positions: {list(eavesdroppers_positions)} \n"
-                )
-            else:
-                position_message = (
-                    f"\nCommencing training episode {episode-buffer_number_of_required_episode} with users positions:\n"
-                    f"   !~ Users Positions: {list(users_position)} \n"
-                )
-        else:
-            if using_eavesdropper:
-                position_message = (
-                    f"\n Initializing positions for replay buffer episode {episode} with users and eavesdroppers positions:\n"
-                    f"   !~ Users Positions: {list(users_position)} \n"
-                    f"   !~ Eavesdroppers Positions: {list(eavesdroppers_positions)} \n"
-                )
-            else:
-                position_message = (
-                    f"\n Initializing positions for replay buffer episode {episode} with users positions:\n"
-                    f"   !~ Users Positions: {list(users_position)} \n"
-                )
-
         # Store user trajectory for analysis
         users_trajectory[episode] = users_position
 
         # Log episode starting positions
-        logger.verbose(position_message)
+        log_position_message(logger, episode, users_position, eavesdroppers_positions,
+                             buffer_filled, buffer_number_of_required_episode, using_eavesdropper)
 
         # Initialize episode tracking arrays
         instant_user_rewards = np.zeros(max_num_step_per_episode) - np.inf
@@ -719,8 +669,6 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                             writer.add_histogram("Eavesdropper/Instant reward", 
                                                 instant_eavesdropper_rewards[num_step + 1 - frequency_information: num_step], current_step)
 
-
-
                         # Create detailed training progress message
                         message = (
                             f"\n|--> TRAINING EPISODE {episode - index_episode_buffer_filled}, STEP {num_step + 1}\n"
@@ -926,90 +874,33 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                     )
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
 
-            # Create console message for episode summary (with emojis)
-            console_message = (
-                f"\n\n"
-                f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
-                f"║ 🎯 TRAINING EPISODE #{episode - index_episode_buffer_filled:3d} │ 🧠 Actor Optimizations: {optim_steps_actor:4d} ║\n"
-                f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
-                f"║ 📍 POSITIONING:\n"
-                f"║    User Equipment Positions: {users_position}\n"
-                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-                f"║ 🏆 REWARDS:\n"
-                f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
-                f"║    • Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} │ Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)]:8.4f}\n"
-                f"║    • Detailed Baseline Reward: {additional_information_best_case}\n"
-                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-                f"║ ⚖️  FAIRNESS:\n"
-                f"║    • Average Fairness: {avg_fairness:8.4f} │ Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:8.4f}\n"
-                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
-                f"║ 📊 PERFORMANCE:\n"
-                f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-                f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+            # Create and display episode summary messages
+            episode_offset = episode - index_episode_buffer_filled
+            best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)]
+            best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper else None
+            
+            console_message, log_message = create_episode_summary_messages(
+                episode=episode,
+                episode_offset=episode_offset,
+                optim_steps=optim_steps_actor,
+                users_position=users_position,
+                eavesdroppers_positions=eavesdroppers_positions,
+                avg_reward=avg_reward,
+                max_reward=episode_max_instant_reward_reached,
+                avg_fairness=avg_fairness,
+                best_fairness=best_fairness,
+                avg_actor_loss=avg_actor_loss,
+                avg_critic_loss=avg_critic_loss,
+                basic_reward_episode=basic_reward_episode,
+                instant_user_rewards=instant_user_rewards,
+                additional_information_best_case=additional_information_best_case,
+                using_eavesdropper=using_eavesdropper,
+                avg_eavesdropper_reward=avg_eavesdropper_reward if using_eavesdropper else None,
+                best_eaves_reward=best_eaves_reward
             )
-
-            # Create ASCII version for file logging
-            log_message = (
-                f"\n+====================================================================================================+\n"
-                f"| [TRAIN] EPISODE #{episode - index_episode_buffer_filled:3d} | Actor Optimizations: {optim_steps_actor:4d} |\n"
-                f"+====================================================================================================+\n"
-                f"| POSITIONING:\n"
-                f"|    User Equipment Positions: {users_position}\n"
-                f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
-                f"| ---------------------------------------------------------------------------------------------------- |\n"
-                f"| REWARDS:\n"
-                f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {episode_max_instant_reward_reached:8.4f}\n"
-                f"|    * Baseline Reward Avg: {np.mean(basic_reward_episode):8.4f} | Best Baseline: {basic_reward_episode[np.argmax(instant_user_rewards)]:8.4f}\n"
-                f"|    * Detailed Baseline Reward: {additional_information_best_case}\n"
-                f"| ---------------------------------------------------------------------------------------------------- |\n"
-                f"| FAIRNESS:\n"
-                f"|    * Average Fairness: {avg_fairness:8.4f} | Best Reward Fairness: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:8.4f}\n"
-                f"| ---------------------------------------------------------------------------------------------------- |\n"
-                f"| PERFORMANCE:\n"
-                f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-                f"+====================================================================================================+\n"
-            )
-
-            # Display console message and log to file
+            
             tqdm.write(console_message)
             logger.verbose(log_message)
-        
-
-        """if not training_envs.verbose:
-            # Message for printing to the console
-            console_message = (
-                f"\nTRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f" REWARDS:\n"
-                f"    Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
-                f"    Average Baseline Reward: {np.mean(basic_reward_episode):.4f} | Baseline Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f" FAIRNESS:\n"
-                f"    Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f}\n"
-                f"--------------------------------------------------------------------------------\n"
-                f" OTHERS:\n"
-                f"    Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f}\n"
-            )
-
-            # Message for logging to a file
-            log_message = (
-                f"\n+{'=' * 100}+\n"
-                f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  REWARDS: |\n"
-                f"|     Average Reward: {avg_reward:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"
-                f"|     Average Baseline Reward: {np.mean(basic_reward_episode):.4f} | Baseline Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  FAIRNESS: |\n"
-                f"|     Average User Fairness: {avg_fairness:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)]:.4f} |\n"
-                f"+{'=' * 100}+\n"
-                f"|  OTHERS: |\n"
-                f"|     Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-                f"+{'=' * 100}+\n"
-            )
-
-            # Log to file
-            logger.verbose(log_message)"""
 
 
         # Store episode reward and fairness for tracking
