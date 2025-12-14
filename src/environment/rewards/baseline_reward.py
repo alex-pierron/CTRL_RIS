@@ -12,7 +12,7 @@ def independant_R_sec_k(k: int, L: int, SINR_B_k, SINR_S_k,
     if eavesdropper_active:
         eavesdroppers_downlink_rewards = np.array([np.log2(1 + SINR_E_d_k_l(k, l)) for l in range(L)])
         eavesdroppers_uplink_rewards = np.array([np.log2(1 + SINR_E_u_k_l(k, l)) for l in range(L)])
-        eavesdroppers_rewards_all =  eavesdroppers_downlink_rewards + eavesdroppers_uplink_rewards # + np.array([np.log2(1 + SINR_E_d_k_l(k, l)) + np.log2(1 + SINR_E_u_k_l(k, l)) for l in range(L)])
+        eavesdroppers_rewards_all =  eavesdroppers_downlink_rewards + eavesdroppers_uplink_rewards 
     else:
         eavesdroppers_rewards_all = 0
 
@@ -52,17 +52,11 @@ def compute_basic_reward(K: int, L: int, SINR_B_k, SINR_S_k,
                                      SINR_E_d_k_l, SINR_E_u_k_l,
                                      eavesdropper_active = eavesdropper_active,
                                      verbose = verbose)
-        #if verbose:
         actual_reward, user_reward_detail = result
         user_reward_details[k] = user_reward_detail
-        """else:
-            actual_reward = result"""
         return actual_reward
-
     users_current_rewards = np.array([compute_reward(k) for k in range(K)])
-    total_basic_reward = np.sum(users_current_rewards) # users_current_rewards[1] #np.sum(users_current_rewards)
-    #total_basic_reward = users_current_rewards[1] #np.sum(users_current_rewards)
-
+    total_basic_reward = np.sum(users_current_rewards) 
     if verbose:
         return users_current_rewards, total_basic_reward, user_reward_details
     

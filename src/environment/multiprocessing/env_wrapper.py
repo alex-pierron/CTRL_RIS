@@ -261,6 +261,30 @@ class DummyVecEnv(VecEnv):
         """Return latest total basic reward from the first env."""
         return [env.basic_reward_total for env in self.envs][0]
     
+    def get_user_info(self):
+        """Return comprehensive user information dictionary from the first env."""
+        return [env.get_user_info() for env in self.envs][0]
+    
+    def get_eavesdropper_info(self):
+        """Return comprehensive eavesdropper information dictionary from the first env."""
+        return [env.get_eavesdropper_info() for env in self.envs][0]
+    
+    def get_user_communication_rates(self):
+        """Return communication rates (downlink, uplink, total) for all users from the first env."""
+        return [env.get_user_communication_rates() for env in self.envs][0]
+    
+    def get_eavesdropper_communication_rates(self):
+        """Return communication rates (downlink, uplink, total) for all eavesdroppers from the first env."""
+        return [env.get_eavesdropper_communication_rates() for env in self.envs][0]
+    
+    def get_user_signal_strengths(self):
+        """Return min/max signal strengths for all users from the first env."""
+        return [env.get_user_signal_strengths() for env in self.envs][0]
+    
+    def get_eavesdropper_signal_strengths(self):
+        """Return min/max signal strengths for all eavesdroppers from the first env."""
+        return [env.get_eavesdropper_signal_strengths() for env in self.envs][0]
+    
     def step_async(self, state, actions):
         self.actions = actions
         self.state = state
@@ -365,6 +389,24 @@ def worker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
     def get_basic_reward(env):
         return env.basic_reward_total
     
+    def get_user_info(env):
+        return env.get_user_info()
+    
+    def get_eavesdropper_info(env):
+        return env.get_eavesdropper_info()
+    
+    def get_user_communication_rates(env):
+        return env.get_user_communication_rates()
+    
+    def get_eavesdropper_communication_rates(env):
+        return env.get_eavesdropper_communication_rates()
+    
+    def get_user_signal_strengths(env):
+        return env.get_user_signal_strengths()
+    
+    def get_eavesdropper_signal_strengths(env):
+        return env.get_eavesdropper_signal_strengths()
+    
     def get_decisive_rewards(env):
         return env.decisive_rewards
     
@@ -446,6 +488,24 @@ def worker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
             
             elif cmd == "get_basic_reward":
                 remote.send([get_basic_reward(env) for env in envs])
+
+            elif cmd == "get_user_info":
+                remote.send([get_user_info(env) for env in envs])
+
+            elif cmd == "get_eavesdropper_info":
+                remote.send([get_eavesdropper_info(env) for env in envs])
+
+            elif cmd == "get_user_communication_rates":
+                remote.send([get_user_communication_rates(env) for env in envs])
+
+            elif cmd == "get_eavesdropper_communication_rates":
+                remote.send([get_eavesdropper_communication_rates(env) for env in envs])
+
+            elif cmd == "get_user_signal_strengths":
+                remote.send([get_user_signal_strengths(env) for env in envs])
+
+            elif cmd == "get_eavesdropper_signal_strengths":
+                remote.send([get_eavesdropper_signal_strengths(env) for env in envs])
 
             elif cmd =="get_decisive_rewards":
                 remote.send([get_decisive_rewards(env) for env in envs])
@@ -656,6 +716,55 @@ class SubprocVecEnv(VecEnv):
             remote.send(('get_basic_reward', None))
         basic_reward = np.array([remote.recv() for remote in self.remotes])
         return basic_reward
+    
+    def get_user_info(self):
+        """Return comprehensive user information dictionary from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_user_info', None))
+        # Collect results from all environments
+        user_info_list = [remote.recv() for remote in self.remotes]
+        return user_info_list
+    
+    def get_eavesdropper_info(self):
+        """Return comprehensive eavesdropper information dictionary from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_eavesdropper_info', None))
+        eavesdropper_info_list = [remote.recv() for remote in self.remotes]
+        return eavesdropper_info_list
+    
+    def get_user_communication_rates(self):
+        """Return communication rates (downlink, uplink, total) for all users from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_user_communication_rates', None))
+        rates_list = [remote.recv() for remote in self.remotes]
+        return rates_list
+    
+    def get_eavesdropper_communication_rates(self):
+        """Return communication rates (downlink, uplink, total) for all eavesdroppers from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_eavesdropper_communication_rates', None))
+        rates_list = [remote.recv() for remote in self.remotes]
+        return rates_list
+    
+    def get_user_signal_strengths(self):
+        """Return min/max signal strengths for all users from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_user_signal_strengths', None))
+        strengths_list = [remote.recv() for remote in self.remotes]
+        return strengths_list
+    
+    def get_eavesdropper_signal_strengths(self):
+        """Return min/max signal strengths for all eavesdroppers from all environments."""
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_eavesdropper_signal_strengths', None))
+        strengths_list = [remote.recv() for remote in self.remotes]
+        return strengths_list
     
     def get_decisive_rewards(self):
         self._assert_not_closed()

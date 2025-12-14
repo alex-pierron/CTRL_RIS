@@ -29,6 +29,10 @@ import numpy as np
 from copy import deepcopy
 from torch.utils.tensorboard import SummaryWriter
 from src.environment.tools import parse_args, parse_config, write_line_to_file, SituationRenderer, TaskManager
+from src.runners.on_policy.onp_single_process_trainer_helpers import (
+    log_position_message,
+    create_episode_summary_messages
+)
 
 
 # Define a new log level (between DEBUG=10 and INFO=20)
@@ -104,12 +108,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         batch_instead_of_buff: Boolean flag (unused for on-policy, kept for compatibility).
         use_rendering: Boolean to know if a rendering tool is needed.
     """
-    # NOTE: Dedicated logger for this run; messages at VERBOSE level go to file only
+    # ========================================================================
+    # INITIALIZATION
+    # ========================================================================
     logger = setup_logger(log_dir)
-
     env_config = training_envs.env_config
 
-    # Extract training configuration parameters from the provided config dictionary
+    # Training configuration
     debugging = training_config.get("debugging", False)
     num_episode = training_config.get("number_episodes", 15)
     max_num_step_per_episode = training_config.get("max_steps_per_episode", 20000)
@@ -117,56 +122,55 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
     frequency_information = training_config.get("frequency_information", 500)
     saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
     plot_saving_frequency = training_config.get("plot_save_checkpoint_frequency", 100)
+    curriculum_learning = training_config.get("Curriculum_Learning", True)
     
+    # Evaluation configuration
     conduct_eval = eval_env is not None
     episode_per_eval = training_config.get("episode_per_eval_env", 1) if conduct_eval else None
     eval_period = training_config.get("eval_period", 1) if conduct_eval else None
-
-    curriculum_learning = training_config.get("Curriculum_Learning", True)
+    
+    # Environment metadata
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
 
+    # Curriculum learning setup
     if curriculum_learning:
-        # NOTE: TaskManager encapsulates curriculum generation and episode outcomes
         grid_limit = env_config.get("user_spawn_limits")
         downlink_activated = env_config.get("BS_max_power") > 0
         uplink_activated = env_config.get("user_transmit_power") > 0
-        Task_Manager = TaskManager(num_users,
-                                   num_steps_per_episode = max_num_step_per_episode,
-                                   user_limits=  grid_limit ,
-                                   RIS_position= env_config.get("RIS_position"),
-                                   downlink_uplink_eavesdropper_bools= [downlink_activated, uplink_activated, using_eavesdropper],
-                                   thresholds = training_config.get("Curriculum_Learning_Thresholds", [0.5,0.5]),
-                                   random_seed = training_config.get("Task_Manager_random_seed", 126) )
+        Task_Manager = TaskManager(
+            num_users,
+            num_steps_per_episode=max_num_step_per_episode,
+            user_limits=grid_limit,
+            RIS_position=env_config.get("RIS_position"),
+            downlink_uplink_eavesdropper_bools=[downlink_activated, uplink_activated, using_eavesdropper],
+            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.5, 0.5]),
+            random_seed=training_config.get("Task_Manager_random_seed", 126)
+        )
 
+    # Rollout buffer configuration
     rollout_size = getattr(network.rollout, 'buffer_size', training_config.get('rollout_size', 2048))
 
-    # Initialize variables to track training progress
+    # Training state tracking
     best_average_reward = -np.inf
-    best_instant_reward = -np.inf
-    optim_steps = 0
     total_steps = 0
-
-    # Initialize arrays for trajectory tracking
+    optim_count = 0
+    
+    # Trajectory tracking
     users_trajectory = np.zeros((num_episode, training_envs.num_users, 2))
     eavesdroppers_trajectory = np.zeros((num_episode, training_envs.num_eavesdroppers, 2))
-
-    # Initialize renderer data if rendering is activated
-    if use_rendering:
-        best_power_patterns = {
-            "downlink_power_patterns": [],
-            "uplink_power_patterns": [],
-            "W_power_patterns": [],
-            "rewards": [],
-            "steps": [],
-            "user_positions": [],
-            "eavesdroppers_positions": []
-        }
-
     average_reward_per_env = np.zeros(num_episode)
 
-    # === Main training loop over episodes ===
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    # ========================================================================
+    # MAIN TRAINING LOOP
+    # ========================================================================
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=1, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         start_episode_time = time.time()
 
         if curriculum_learning:
@@ -193,19 +197,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             eavesdroppers_positions = None
 
         # Log starting positions
-        if using_eavesdropper:
-            position_message = (
-                f"\nCommencing training episode {episode} with users and eavesdroppers positions:\n"
-                f"   !~ Users Positions: {list(users_position)} \n"
-                f"   !~ Eavesdroppers Positions: {list(eavesdroppers_positions)} \n"
-            )
-        else:
-            position_message = (
-                f"\nCommencing training episode {episode} with users positions:\n"
-                f"   !~ Users Positions: {list(users_position)} \n"
-            )
-
-        logger.verbose(position_message)
+        log_position_message(logger, episode, users_position, eavesdroppers_positions, using_eavesdropper)
 
         # Initialize arrays to track rewards and losses for the episode
         instant_user_rewards = np.zeros(max_num_step_per_episode) - np.inf
@@ -220,9 +212,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         additional_information_best_case = 0
         step_time_list = []
         
-        avg_actor_loss_epoch = 0
-        avg_critic_loss_epoch = 0
+        avg_actor_loss_episode = 0
+        avg_critic_loss_episode = 0
+
+        ppo_epochs = network.ppo_epochs
+
         optim_steps_epoch = 0
+
         max_episode_reward = -np.inf
         max_episode_eavesdropper_reward = 0
         
@@ -272,8 +268,10 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             instant_user_jain_fairness[num_step] = training_envs.get_user_jain_fairness()
             basic_reward_episode[num_step] = training_envs.get_basic_reward()
             
-            # Track cumulative rewards and averages
-            total_reward = np.sum(instant_user_rewards[instant_user_rewards > -np.inf])
+            # OPTIMIZED: Track cumulative rewards and averages more efficiently
+            # Only compute valid rewards mask once per step
+            valid_mask = instant_user_rewards > -np.inf
+            total_reward = np.sum(instant_user_rewards[valid_mask])
             avg_reward = total_reward / (num_step + 1)
             average_rewards[num_step] = avg_reward
             if num_step > 1:
@@ -285,14 +283,27 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             # NOTE: Track best rewards for rendering
             if reward_value > max_episode_reward and use_rendering:
                 max_episode_reward = round(reward_value, 4)
+                
+                # Get additional information for best case analysis
+                additional_information_best_case = training_envs.get_additionnal_informations()
+                W = training_envs.get_W()
+                total_power_deployed = round(np.trace(np.diag(np.diag(W @ W.conj().T)).real), 4)
+                
+                # Extract power patterns for visualization
                 max_W_power_patterns = training_envs.get_W_power_patterns()
                 max_downlink_power_patterns = training_envs.get_downlink_power_patterns()
                 max_uplink_power_patterns = training_envs.get_uplink_power_patterns()
+                
+                # Store best power patterns for animation
                 episode_best_power_patterns["rewards"].append(deepcopy(reward_value))
                 episode_best_power_patterns["steps"].append(deepcopy(num_step))
                 episode_best_power_patterns["W_power_patterns"].append(deepcopy(max_W_power_patterns))
                 episode_best_power_patterns["downlink_power_patterns"].append(deepcopy(max_downlink_power_patterns))
                 episode_best_power_patterns["uplink_power_patterns"].append(deepcopy(max_uplink_power_patterns))
+
+            elif reward_value > max_episode_reward:
+                max_episode_reward = round(reward_value, 4)
+                additional_information_best_case = training_envs.get_additionnal_informations()
 
             # Track and render best eavesdropper rewards
             if using_eavesdropper and instant_eavesdropper_rewards[num_step] > max_episode_eavesdropper_reward and use_rendering:
@@ -312,9 +323,11 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 training_time_1 = time.time()
                 actor_loss, critic_loss, mean_reward = network.training()
                 step_time_list.append(time.time() - training_time_1)
-                avg_actor_loss_epoch += actor_loss
-                avg_critic_loss_epoch += critic_loss
-                optim_steps_epoch += 1
+                avg_actor_loss_episode += actor_loss
+                avg_critic_loss_episode += critic_loss
+                optim_steps_epoch += ppo_epochs
+
+                optim_count += ppo_epochs
 
                 writer.add_scalar("Training/Actor loss (per update)", actor_loss, total_steps)
                 writer.add_scalar("Training/Critic loss (per update)", critic_loss, total_steps)
@@ -332,28 +345,33 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 W = training_envs.get_W()
                 total_power_deployed = round(np.trace(np.diag(np.diag(W @ W.conj().T)).real), 4)
 
-                # Calculate local metrics over the last `frequency_information` steps
-                local_rewards = instant_user_rewards[max(0, num_step + 1 - frequency_information): num_step + 1]
+                # OPTIMIZED: Calculate local metrics over the last `frequency_information` steps
+                # Pre-compute slice indices once
+                start_idx = max(0, num_step + 1 - frequency_information)
+                end_idx = num_step + 1
+                
+                local_rewards = instant_user_rewards[start_idx:end_idx]
                 valid_local_rewards = local_rewards[local_rewards > -np.inf]
                 local_average_reward = np.mean(valid_local_rewards) if len(valid_local_rewards) > 0 else 0.0
                 
-                local_basic_rewards = basic_reward_episode[max(0, num_step + 1 - frequency_information): num_step + 1]
+                local_basic_rewards = basic_reward_episode[start_idx:end_idx]
                 local_average_basic_reward = np.mean(local_basic_rewards)
                 
-                local_fairness = instant_user_jain_fairness[max(0, num_step + 1 - frequency_information): num_step + 1]
+                local_fairness = instant_user_jain_fairness[start_idx:end_idx]
                 local_user_fairness = round(np.mean(local_fairness), ndigits=4)
 
                 # Log comprehensive TensorBoard metrics
+                # OPTIMIZED: Reuse pre-computed slice indices
                 writer.add_scalar("Rewards/Local Average Reward", local_average_reward, total_steps)
-                writer.add_histogram("Rewards/Paper Average Reward", paper_average_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
+                writer.add_histogram("Rewards/Paper Average Reward", paper_average_rewards[start_idx:end_idx], total_steps)
                 writer.add_scalar("Rewards/Global Average Reward", avg_reward, total_steps)
                 writer.add_scalar("Rewards/Max Instant Reward", np.max(instant_user_rewards), total_steps)
                 writer.add_scalar("Rewards/Local Average Baseline Reward", local_average_basic_reward, total_steps)
-                writer.add_histogram("Rewards/Instant reward", instant_user_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
+                writer.add_histogram("Rewards/Instant reward", instant_user_rewards[start_idx:end_idx], total_steps)
 
                 # Calculate current average losses
-                current_avg_actor_loss = avg_actor_loss_epoch / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
-                current_avg_critic_loss = avg_critic_loss_epoch / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
+                current_avg_actor_loss = avg_actor_loss_episode / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
+                current_avg_critic_loss = avg_critic_loss_episode / max(1, optim_steps_epoch) if optim_steps_epoch > 0 else 0.0
                 
                 # Log loss metrics (only if we have training steps)
                 if optim_steps_epoch > 0:
@@ -364,18 +382,15 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 writer.add_scalar("General/Power deployed (Watts)", total_power_deployed, total_steps)
 
                 if using_eavesdropper:
+                    # OPTIMIZED: Reuse pre-computed slice indices
                     reward_combined = instant_user_rewards + instant_eavesdropper_rewards
-                    local_average_reward_combined = np.mean(reward_combined[max(0, num_step + 1 - frequency_information): num_step + 1])
+                    local_average_reward_combined = np.mean(reward_combined[start_idx:end_idx])
                     writer.add_scalar("General/Local average total SSR", local_average_reward_combined, total_steps)
 
-                    local_eaves_rewards = instant_eavesdropper_rewards[max(0, num_step + 1 - frequency_information): num_step + 1]
+                    local_eaves_rewards = instant_eavesdropper_rewards[start_idx:end_idx]
                     local_average_eavesdropper_reward = np.mean(local_eaves_rewards)
                     writer.add_scalar("Eavesdropper/Local average reward", local_average_eavesdropper_reward, total_steps)
-                    writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[max(0, num_step + 1 - frequency_information): num_step + 1], total_steps)
-
-                # Get additional information for best case
-                if reward_value > max_episode_reward:
-                    additional_information_best_case = training_envs.get_additionnal_informations()
+                    writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[start_idx:end_idx], total_steps)
 
                 message = (
                     f"\n|--> ON-POLICY TRAINING EPISODE {episode}, STEP {num_step + 1}\n"
@@ -404,8 +419,8 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         valid_rewards = instant_user_rewards[instant_user_rewards > -np.inf]
         avg_reward_episode = np.mean(valid_rewards) if len(valid_rewards) > 0 else 0.0
         avg_fairness_episode = np.mean(instant_user_jain_fairness[:len(valid_rewards)])
-        avg_actor_loss = avg_actor_loss_epoch / max(1, optim_steps_epoch)
-        avg_critic_loss = avg_critic_loss_epoch / max(1, optim_steps_epoch)
+        avg_actor_loss = avg_actor_loss_episode / max(1, optim_steps_epoch)
+        avg_critic_loss = avg_critic_loss_episode / max(1, optim_steps_epoch)
         
         writer.add_scalar("Rewards/Average Reward per episode", avg_reward_episode, episode)
         writer.add_scalar("Rewards/Max reward reached per episode", max_episode_reward, episode)
@@ -458,41 +473,30 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             network.save_models(ckpt_dir)
             logger.info(f"Saved checkpoint for episode {episode}")
 
-        # NOTE: Log episode summary (console + file)
+        # Create and display episode summary messages
         episode_max_instant_reward_reached = max(instant_user_rewards) if len(valid_rewards) > 0 else 0.0
+        best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0
+        best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper and len(valid_rewards) > 0 else None
         
-        # Message for printing to the console
-        console_message = (
-            f"\n\n !!~ ON-POLICY TRAINING EPISODE No {episode} | Optimization Steps Performed: {optim_steps_epoch}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"   ~ ~ REWARDS:\n"
-            f"     |--> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f}\n"
-            f"     |--> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"  ~ ~ FAIRNESS:\n"
-            f"     |--> Average User Fairness: {avg_fairness_episode:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f}\n"
-            f"--------------------------------------------------------------------------------\n"
-            f"  ~ ~ OTHERS:\n"
-            f"     |--> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f}\n\n"
+        console_message, log_message = create_episode_summary_messages(
+            episode=episode,
+            optim_steps=optim_count,
+            users_position=users_position,
+            eavesdroppers_positions=eavesdroppers_positions,
+            avg_reward=avg_reward_episode,
+            max_reward=episode_max_instant_reward_reached,
+            avg_fairness=avg_fairness_episode,
+            best_fairness=best_fairness,
+            avg_actor_loss=avg_actor_loss,
+            avg_critic_loss=avg_critic_loss,
+            basic_reward_episode=basic_reward_episode,
+            instant_user_rewards=instant_user_rewards,
+            additional_information_best_case=additional_information_best_case,
+            using_eavesdropper=using_eavesdropper,
+            avg_eaves_reward=avg_eaves_reward if using_eavesdropper else None,
+            best_eaves_reward=best_eaves_reward
         )
-
-        # Message for logging to a file
-        log_message = (
-            f"\n+{'=' * 100}+\n"
-            f"| !~ ON-POLICY TRAINING EPISODE N° {episode} | Optimization Steps Performed: {optim_steps_epoch} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ REWARDS: |\n"
-            f"|     --> Average Reward: {avg_reward_episode:.4f} | Max Instant Reward: {episode_max_instant_reward_reached:.4f} |\n"
-            f"|     --> Average Basic Reward: {np.mean(basic_reward_episode):.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_episode[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ FAIRNESS: |\n"
-            f"|     --> Average User Fairness: {avg_fairness_episode:.4f} | User Fairness for Best Instant Reward: {instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0:.4f} |\n"
-            f"+{'=' * 100}+\n"
-            f"|  ~ ~ OTHERS: |\n"
-            f"|     --> Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-            f"+{'=' * 100}+\n"
-        )
-
+        
         tqdm.write(console_message)
         logger.verbose(log_message)
 
@@ -518,7 +522,13 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 all_episode_eaves_rewards = np.zeros(episode_per_eval)
 
             # NOTE: Loop over evaluation episodes
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=2, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
                 eval_env.reset()
                 episode_user_rewards = np.zeros(max_num_step_per_episode)
                 episode_user_fairness = np.zeros(max_num_step_per_episode)

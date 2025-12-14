@@ -690,9 +690,17 @@ class SituationRenderer:
         #W_lines_uplink = []
         
         # Calculate the limits for all subplots based on all positions
-        all_positions = np.vstack([np.array(self.BS_position), np.array(self.RIS_position)] + self.users_position)
+        # Build a consistent (N, 2) array of all relevant positions
+        all_positions = np.vstack([
+            np.atleast_2d(np.array(self.BS_position)),
+            np.atleast_2d(np.array(self.RIS_position)),
+            np.atleast_2d(np.array(self.users_position))
+        ])
         if self.eavesdropper_present and not self.eavesdropper_moving:
-            all_positions = np.vstack([all_positions, self.eavesdroppers_positions])
+            all_positions = np.vstack([
+                all_positions,
+                np.atleast_2d(np.array(self.eavesdroppers_positions))
+            ])
 
         # Calculate the center of all points
         center_x = np.mean(all_positions[:,0])

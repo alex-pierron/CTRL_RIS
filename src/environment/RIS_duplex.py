@@ -1,6 +1,16 @@
 """
 Gym environment for a RIS duplex communication system.
 
+This module provides the main RIS_Duplex environment class that orchestrates
+all components of the RIS duplex communication system simulation.
+
+Architecture:
+- Main RIS_Duplex class coordinates all subsystems
+- Modular components in ris_modules/ handle specific functionalities:
+  * ActionProcessor: Action processing and matrix computations
+  * MetricsTracker: Communication rates and signal strength metrics
+  * PowerPatternComputer: Power pattern computations for visualization
+
 Responsibilities:
 - Initialize physical parameters and topology from a config dict
 - Generate Rician channels (LoS + NLoS) and keep them updated
@@ -8,6 +18,11 @@ Responsibilities:
 - Apply actions to update RIS phases `Theta` and BS beamforming `W`
 - Compute SINR-related metrics, rewards, and fairness indices
 - Provide mobility and power pattern utilities for analysis
+
+Code Organization:
+- Sections are clearly marked with dividers for easy navigation
+- Related methods are grouped together logically
+- Modular components handle independent functionalities
 
 Better Comments legend used throughout the file:
 - TODO: future improvements or refactors (non-functional)
@@ -21,12 +36,12 @@ import torch
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-import matplotlib.pyplot as plt
-from .tools import PositionGenerator, parse_config, select_functions
+from .tools import PositionGenerator, select_functions
 from copy import deepcopy
 from .rewards import *
 from .physics import *
 from .mobility import *
+from .ris_modules import ActionProcessor, MetricsTracker, PowerPatternComputer
 from time import time as time_for_seed
 
 class RIS_Duplex(gym.Env):
@@ -46,7 +61,6 @@ class RIS_Duplex(gym.Env):
         P_max (float): Maximum transmit power at the base station in Watts.
         P_users (np.ndarray): Maximum transmit power for each user in Watts.
         lambda_h (float): Wavelength parameter for the environment.
-        alpha (float): Path loss fading coefficient.
         d_h (np.ndarray): Inter-element spacing in the ULAs.
         rician_factor (float): Rician factor for the environment.
         sigma_k_squared (float): Noise power density for the downlink signal in Watts for the users.
@@ -91,7 +105,10 @@ class RIS_Duplex(gym.Env):
         user_reward_detail (np.ndarray): Detailed reward information for each user.
     """
 
-    # ---------------------------------------------- Initialization and Reset --------------------------------------------------------------
+    # ============================================================================
+    # INITIALIZATION
+    # ============================================================================
+    
     def __init__(self, environment_config_dict: dict):
         """Initialize the environment from a configuration dictionary.
 
@@ -116,23 +133,45 @@ class RIS_Duplex(gym.Env):
         self._M = self.env_config['num_RIS_elements']
 
         # =====================================================================
-        # Power & noise
+        # Power & noise parameters
         # =====================================================================
+        # Base station maximum transmit power (convert from dBm to Watts)
         self.P_max = dbm_to_watts(self.env_config['BS_max_power'])
-        self.P_users = np.ones(self.K) * self.env_config.get('user_transmit_power', 100) * 1e-3  # in W
-        self._lambda_h = self.env_config.get('lambda_h', 0.1) # in meter
-        self.alpha = self.env_config.get('alpha', 2)
-        self._d_h = self.env_config.get('d_h', self._lambda_h / 2) * np.ones(4) # in meter
+        # User equipment transmit power (convert from mW to Watts)
+        self.P_users = np.ones(self.K) * self.env_config.get('user_transmit_power', 100) * 1e-3
+        self._uplink_used = bool(np.any(self.P_users > 0))
+        self._lambda_h = self.env_config.get('lambda_h', 0.1)  # Wavelength in meters
+        self._d_h = self.env_config.get('d_h', self._lambda_h / 2) * np.ones(4)  # Inter-element spacing in meters
         self.los_only = self.env_config.get('los_only', False) 
         self.rician_factor = self.env_config.get('rician_factor', 10)
-        self.channel_bandwidth = self.env_config.get('channel_bandwidth', 10)  # in MHz
-        self.delta_squared = self.env_config.get('noise_power_density', -174)  # in dBm/Hz
-        self.delta_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # in W
-        self.sigma_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # in W
+        self.channel_bandwidth = self.env_config.get('channel_bandwidth', 10)  # Bandwidth in MHz
+        self.delta_squared = self.env_config.get('noise_power_density', -174)  # Noise power density in dBm/Hz
+        # Convert noise power density to Watts for computation
+        self.delta_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # Uplink noise in W
+        self.sigma_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # Downlink noise in W
 
+        # =====================================================================
+        # Information tracking structures
+        # =====================================================================
+        # Initialize comprehensive information storage for metrics tracking
+        self.user_info = {}
+        self.eavesdropper_info = {}
+        
+        # Initialize user information dictionaries for each user
+        self._initialize_user_info_dicts()
+        
+        # Initialize eavesdropper information dictionaries if eavesdroppers are active
+        if self.eavesdropper_active:
+            self._initialize_eavesdropper_info_dicts()
+        
+        # =====================================================================
+        # Legacy arrays for backward compatibility
+        # =====================================================================
+        # NOTE: These arrays maintain compatibility with older code that may
+        # reference these attributes directly. New code should use user_info/eavesdropper_info.
         self.sinr_downlink_users = np.zeros(self.K)
-        self.sinr_downlink_signals = np.zeros(self.num_users)
-        self.sinr_downlink_interfs = np.zeros(self.num_users)
+        self.sinr_downlink_signals = np.zeros(self.K)
+        self.sinr_downlink_interfs = np.zeros(self.K)
         self.sinr_uplink_users = np.zeros(self.K)
         self.uplink_signal_strength = np.zeros(self.K)
         self.sinr_downlink_details = {}
@@ -182,6 +221,12 @@ class RIS_Duplex(gym.Env):
         self.informative_rewards = {}
         self.decisive_rewards = {}
 
+        # =====================================================================
+        # Physics features choosing
+        # =====================================================================
+        self.use_inter_user_interferences = self.env_config.get('inter_user_interferences', True)
+
+
         # Select reward functions
         self.decisive_reward_functions = select_functions(
             'decisive_reward_functions', authorized_reward_list, authorized_reward_dict, self.env_config
@@ -192,7 +237,7 @@ class RIS_Duplex(gym.Env):
         self.qos_p = self.env_config.get('qos_p', 2)
         self.print_info = self.env_config.get('print_info_env', False)
 
-        if "basic_reward" not in self.informative_reward_functions or self.decisive_reward_functions:
+        if "baseline_reward" not in self.informative_reward_functions or self.decisive_reward_functions:
             self.compute_extra_basic_reward = True
         else:
             self.compute_extra_basic_reward = False
@@ -221,12 +266,15 @@ class RIS_Duplex(gym.Env):
             modes = {"random_walk": 0, "brownian": 1, "levy_flight": 2}
             self.mobility_model_eavesdroppers = modes[self.env_config.get('mobility_model_eavesdroppers', "brownian")]
         # NOTE: Position generator encapsulates user/eaves spawn logic
+        min_distance = self.env_config.get('min_distance', 2)
+        
         self.position_generator = PositionGenerator(
             self.num_users,
             self.users_spawn_limits,
             num_eavesdroppers=self._num_eavesdroppers,
             RIS_position=self._RIS_position,
-            numpy_generator=self.numpy_rng
+            numpy_generator=self.numpy_rng,
+            min_distance = min_distance,
         )
 
         self.angles = np.linspace(0, 2 * np.pi, 360)
@@ -252,10 +300,11 @@ class RIS_Duplex(gym.Env):
             low=action_low_bound, high=action_high_bound, shape=(self.action_dim,), dtype=np.float64
         )
 
-        #! FOR DEBUGGING PURPOSE
-        self.bjornson = self.env_config.get('bjornson', False)
-
-        self.debugging = self.env_config.get('debugging', False)  # downlink, in W
+        # =====================================================================
+        # Debugging and testing flags
+        # =====================================================================
+        self.bjornson = self.env_config.get('bjornson', False)  # Use Bjornson channel model
+        self.debugging = self.env_config.get('debugging', False)  # Enable debugging mode
         if self.debugging:
             self.test_point_for_user = np.array(self.env_config.get('test_point_for_user', [122,88]))
             self.test_point_for_BS = np.array(self.env_config.get('test_point_for_BS', [20,20]))
@@ -265,12 +314,15 @@ class RIS_Duplex(gym.Env):
         if self.eavesdropper_active:
             self.eavesdroppers_positions = self.position_generator.generate_random_eavesdroppers_positions()
 
-        # Use two seeds to make sure users are frozen (can be optimized in future work)
+        # Handle fixed user positions (for reproducibility)
+        # NOTE: Uses separate seed to ensure user positions remain frozen when needed
         if not self.user_position_changing:
             fixed_position = self.env_config.get('users_fixed_positions', None)
             if fixed_position is not None:
+                # Use explicitly provided fixed positions
                 self.users_positions = fixed_position
             else:
+                # Generate fixed positions using dedicated seed
                 if self.random_random_seed:  
                     self.second_seed = int(time_for_seed())
                 else:
@@ -284,35 +336,59 @@ class RIS_Duplex(gym.Env):
                 )
                 self.users_positions = self.second_position_generator.generate_random_users_positions()
 
+        # Handle fixed eavesdropper positions (for reproducibility)
         if not self.eaves_position_changing:
             fixed_position = self.env_config.get('eaves_fixed_positions', None)
             if fixed_position is not None:
+                # Use explicitly provided fixed positions
                 self.eavesdroppers_positions = fixed_position
-
-            else:  
-                self.eavesdroppers_positions = self.position_generator.generate_new_eavesdroppers_positions(users_positions=self.users_positions) 
+            else:
+                # Generate fixed positions relative to users
+                self.eavesdroppers_positions = self.position_generator.generate_new_eavesdroppers_positions(
+                    users_positions=self.users_positions
+                ) 
 
 
         # =====================================================================
-        # State dimensions
+        # State space dimension calculation
         # =====================================================================
+        # Previous rate information dimension
+        # (either per-user detailed info or aggregated summary)
         if self.additional_state_info:
-            self.previous_rate_dim = 2 * self.K + 2 * self.K + 3  # More fine-grained info
+            # Detailed: per-user downlink rates (K) + per-user uplink rates (K) + 
+            #          fairness (1) + eavesdropper sum (1) + SSR (1) + user positions (2K)
+            self.previous_rate_dim = 2 * self.K + 2 * self.K + 3
         else:
-            self.previous_rate_dim = 4  # Limited info
+            # Aggregated: sum downlink (1) + sum uplink (1) + sum eaves (1) + SSR (1)
+            self.previous_rate_dim = 4
 
+        # Cascaded channel dimension: depends on whether eavesdroppers are active
         if self.eavesdropper_active:
-            cascaded_channel_dim = 2 * self.K**2 + 4 * self.K * self._num_eavesdroppers + 2 * self.N_r * self.K 
+            # BS-RIS-Users (K×K) + BS-RIS-Eaves (K×L) + Users-RIS-BS (N_r×K) + 
+            # Users-RIS-Eaves (L×K), all with real+imaginary parts
+            cascaded_channel_dim = (
+                2 * self.K**2 +                          # BS-RIS-Users (real + imag)
+                2 * self.K * self._num_eavesdroppers +   # BS-RIS-Eaves (real + imag)
+                2 * self.N_r * self.K +                  # Users-RIS-BS (real + imag)
+                2 * self._num_eavesdroppers * self.K      # Users-RIS-Eaves (real + imag)
+            )
         else:
+            # BS-RIS-Users (K×K) + placeholder (1) + Users-RIS-BS (N_r×K) + placeholder (1)
             cascaded_channel_dim = 2 * self.K**2 + 4 + 2 * self.N_r * self.K
 
-        phase_noise_dim = self._M
-        BS_transmit_power_dim = 2 * self.K
-        previous_received_power_dim = 2 * self.K
+        # Other state components
+        phase_noise_dim = self._M                          # Phase noise per RIS element
+        BS_transmit_power_dim = 2 * self.K                # Power per user (real + imag)
+        previous_received_power_dim = 2 * self.K          # Previous power per user (real + imag)
 
+        # Total state dimension
         self._state_dim = (
-            self.previous_rate_dim + cascaded_channel_dim + phase_noise_dim
-            + self.action_dim + BS_transmit_power_dim + previous_received_power_dim
+            self.previous_rate_dim +
+            cascaded_channel_dim +
+            phase_noise_dim +
+            self.action_dim +
+            BS_transmit_power_dim +
+            previous_received_power_dim
         )
 
         self._observation_space = spaces.Dict(
@@ -347,6 +423,21 @@ class RIS_Duplex(gym.Env):
         self._num_episode = 0
         self._num_step = 0
         self.previous_rate_part = np.zeros(self.previous_rate_dim)
+        
+        # =====================================================================
+        # Performance optimization caches
+        # =====================================================================
+        self._channel_cache = {}
+        self._last_user_positions = None
+        self._last_eaves_positions = None
+        self._cached_gains = None
+        self._cached_matrix_products = {}
+        self._last_theta_phi = None
+        self._last_W = None
+        self._cached_sinr = {}
+        self._cached_sinr['downlink'] = np.zeros(self.K)
+        self._cached_sinr['uplink'] = np.zeros(self.K)
+        self._sinr_cache_valid = False
 
         self.test = 0
 
@@ -362,11 +453,122 @@ class RIS_Duplex(gym.Env):
         self.sinr_e_u_k_l = -np.inf
         self.user_reward_detail = np.zeros(self.K, dtype=object)
 
+        # =====================================================================
+        # Episode initialization
+        # =====================================================================
         # NOTE: Initialize first episode
         self.reset(seed=self.seed)
-        pass
 
-    # ---------------------------------------------- Properties --------------------------------------------------------------
+    # ============================================================================
+    # HELPER METHODS FOR INITIALIZATION
+    # ============================================================================
+
+    def _initialize_user_info_dicts(self):
+        """Initialize user information tracking dictionaries.
+        
+        Creates nested dictionaries to track SINR, signal power, interference,
+        and statistical metrics for both downlink and uplink for each user.
+        """
+        base_info_template = {
+            'timestep': 0,
+            'sinr_ratio': 0.0,
+            'sinr_db': -np.inf,
+            'signal_power_watts': 0.0,
+            'signal_power_dbm': -np.inf,
+            'interference_noise_watts': 0.0,
+            'interference_noise_dbm': -np.inf,
+            'cumulative_signal_watts': 0.0,
+            'cumulative_interference_watts': 0.0,
+            'min_signal_watts': np.inf,
+            'max_signal_watts': -np.inf,
+            'avg_signal_dbm': -np.inf,
+            'avg_sinr_ratio': 0.0,
+            'avg_sinr_db': -np.inf
+        }
+        
+        for k in range(self.K):
+            self.user_info[k] = {
+                'downlink': deepcopy(base_info_template),
+                'uplink': deepcopy(base_info_template)
+            }
+
+    def _initialize_eavesdropper_info_dicts(self):
+        """Initialize eavesdropper information tracking dictionaries.
+        
+        Creates nested dictionaries to track SINR, signal power, interference,
+        and statistical metrics for both downlink and uplink for each eavesdropper.
+        Each eavesdropper tracks metrics per user (K users).
+        """
+        base_info_template = {
+            'timestep': 0,
+            'sinr_ratios': np.zeros(self.K),  # SINR for each user
+            'signal_powers_watts': np.zeros(self.K),
+            'signal_powers_dbm': np.full(self.K, -np.inf),
+            'interference_noise_watts': np.zeros(self.K),
+            'interference_noise_dbm': np.full(self.K, -np.inf),
+            'cumulative_signal_watts': np.zeros(self.K),
+            'cumulative_interference_watts': np.zeros(self.K),
+            'min_signal_watts': np.full(self.K, np.inf),
+            'max_signal_watts': np.full(self.K, -np.inf),
+            'avg_signal_dbm': np.full(self.K, -np.inf),
+            'avg_sinr_ratios': np.zeros(self.K),
+            'avg_sinr_db': np.full(self.K, -np.inf)
+        }
+        
+        for l in range(self._num_eavesdroppers):
+            self.eavesdropper_info[l] = {
+                'downlink': deepcopy(base_info_template),
+                'uplink': deepcopy(base_info_template)
+            }
+
+    def _reset_user_info_dicts(self):
+        """Reset user information dictionaries to initial state for new episode."""
+        reset_template = {
+            'timestep': 0,
+            'sinr_ratio': 0.0,
+            'sinr_db': -np.inf,
+            'signal_power_watts': 0.0,
+            'signal_power_dbm': -np.inf,
+            'interference_noise_watts': 0.0,
+            'interference_noise_dbm': -np.inf,
+            'cumulative_signal_watts': 0.0,
+            'cumulative_interference_watts': 0.0,
+            'min_signal_watts': np.inf,
+            'max_signal_watts': -np.inf,
+            'avg_signal_dbm': -np.inf,
+            'avg_sinr_ratio': 0.0,
+            'avg_sinr_db': -np.inf
+        }
+        
+        for k in range(self.K):
+            self.user_info[k]['downlink'].update(deepcopy(reset_template))
+            self.user_info[k]['uplink'].update(deepcopy(reset_template))
+
+    def _reset_eavesdropper_info_dicts(self):
+        """Reset eavesdropper information dictionaries to initial state for new episode."""
+        reset_template = {
+            'timestep': 0,
+            'sinr_ratios': np.zeros(self.K),
+            'signal_powers_watts': np.zeros(self.K),
+            'signal_powers_dbm': np.full(self.K, -np.inf),
+            'interference_noise_watts': np.zeros(self.K),
+            'interference_noise_dbm': np.full(self.K, -np.inf),
+            'cumulative_signal_watts': np.zeros(self.K),
+            'cumulative_interference_watts': np.zeros(self.K),
+            'min_signal_watts': np.full(self.K, np.inf),
+            'max_signal_watts': np.full(self.K, -np.inf),
+            'avg_signal_dbm': np.full(self.K, -np.inf),
+            'avg_sinr_ratios': np.zeros(self.K),
+            'avg_sinr_db': np.full(self.K, -np.inf)
+        }
+        
+        for l in range(self._num_eavesdroppers):
+            self.eavesdropper_info[l]['downlink'].update(deepcopy(reset_template))
+            self.eavesdropper_info[l]['uplink'].update(deepcopy(reset_template))
+
+    # ============================================================================
+    # PROPERTIES
+    # ============================================================================
 
     @property
     def M(self):
@@ -471,6 +673,62 @@ class RIS_Duplex(gym.Env):
     def get_episode_action_noise(self):
         """Returns the action noise for the current episode."""
         return self.episode_action_noise
+        
+    @property
+    def get_user_info(self):
+        """Returns comprehensive user information dictionary."""
+        return self.user_info
+    
+    @property
+    def get_eavesdropper_info(self):
+        """Returns comprehensive eavesdropper information dictionary."""
+        return self.eavesdropper_info
+
+    def get_user_communication_rates(self):
+        """Compute downlink, uplink, and total communication rates for all users.
+        
+        Returns:
+            dict: Dictionary with keys 'downlink', 'uplink', 'total', each containing
+                  numpy arrays of shape (K,) with rates in bits/s/Hz per user.
+        """
+        return MetricsTracker.get_user_communication_rates(
+            self.sinr_downlink_users, self.sinr_uplink_users, self.K, self._uplink_used
+        )
+    
+    def get_eavesdropper_communication_rates(self):
+        """Compute downlink, uplink, and total communication rates for all eavesdroppers.
+        
+        Returns:
+            dict: Dictionary with keys 'downlink', 'uplink', 'total', each containing
+                  numpy arrays of shape (K, L) with rates in bits/s/Hz per user-eavesdropper pair.
+                  Also includes 'max_per_user' with shape (K,) for maximum rates across eavesdroppers.
+        """
+        return MetricsTracker.get_eavesdropper_communication_rates(
+            self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l, self.K, self._num_eavesdroppers,
+            self.eavesdropper_active, self._uplink_used
+        )
+    
+    def get_user_signal_strengths(self):
+        """Get minimum and maximum signal strengths for all users.
+        
+        Returns:
+            dict: Dictionary with keys 'min_downlink', 'max_downlink', 'min_uplink', 'max_uplink',
+                  each containing numpy arrays of shape (K,) with signal strengths in dBm.
+        """
+        return MetricsTracker.get_user_signal_strengths(self.user_info, self.K)
+    
+    def get_eavesdropper_signal_strengths(self):
+        """Get minimum and maximum signal strengths for all eavesdroppers.
+        
+        Returns:
+            dict: Dictionary with keys 'min_downlink', 'max_downlink', 'min_uplink', 'max_uplink',
+                  each containing numpy arrays of shape (K, L) with signal strengths in dBm.
+                  Also includes 'min_across_eaves', 'max_across_eaves' with shape (K,) for min/max across eavesdroppers.
+        """
+        return MetricsTracker.get_eavesdropper_signal_strengths(
+            self.eavesdropper_info, self.K, self._num_eavesdroppers,
+            self.eavesdropper_active, self._uplink_used
+        )
 
     @property
     def observation_space(self) -> gym.Space:
@@ -482,7 +740,9 @@ class RIS_Duplex(gym.Env):
         """Returns the action space of the environment."""
         return self._action_space
 
-    # ---------------------------------------------- Reset and Initialization --------------------------------------------------------------
+    # ============================================================================
+    # RESET AND INITIALIZATION
+    # ============================================================================
 
     def reset(self, seed=None, chosen_difficulty_config=None):
         """Reset environment state at the start of a new episode.
@@ -546,9 +806,17 @@ class RIS_Duplex(gym.Env):
         self.previous_rate_part = np.zeros(self.previous_rate_dim)
         self._num_step = 0
 
+        # Reset comprehensive information storage to initial state
+        self._reset_user_info_dicts()
+        
+        # Reset eavesdropper information if eavesdroppers are active
+        if self.eavesdropper_active:
+            self._reset_eavesdropper_info_dicts()
+
+        # Legacy arrays for backward compatibility
         self.sinr_downlink_users = np.zeros(self.K)
-        self.sinr_downlink_signals = np.zeros(self.num_users)
-        self.sinr_downlink_interfs = np.zeros(self.num_users)
+        self.sinr_downlink_signals = np.zeros(self.K)
+        self.sinr_downlink_interfs = np.zeros(self.K)
         self.sinr_downlink_details = {}
         self.downlink_signal_strength = np.zeros(self.K)
         self.downlink_sinr_average = np.zeros(self.K)
@@ -583,34 +851,29 @@ class RIS_Duplex(gym.Env):
             receiver_position=self._RIS_position,
             W_h_t=self.N_t, W_h_r=self._M,
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
-            alpha=self.alpha,
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
         )
 
         if self.debugging:
-            
             self_second_np_rng = np.random.default_rng(123)
             self._channel_matrices["H_BS_RIS_Test"] = rician_fading_channel(
             transmitter_position=self._BS_position,
             receiver_position=self._RIS_position,
             W_h_t=self.N_t, W_h_r=self._M,
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
-            alpha=self.alpha,
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self_second_np_rng ,bjornson = True,
             )
         
             self_second_np_rng = np.random.default_rng(123)
-
             self._channel_matrices["H_BS_Test_Point_BS"] = np.array([rician_fading_channel(
                 transmitter_position=self._BS_position,
                 receiver_position=self.test_point_for_BS,
                 W_h_t=self.N_t, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self_second_np_rng, nlos_only = True ,bjornson = True,
@@ -622,7 +885,6 @@ class RIS_Duplex(gym.Env):
             receiver_position=self._BS_position,
             W_h_t=self._M, W_h_r=self.N_r,
             d_h_tx=self._d_h[1], d_h_rx=self._d_h[0],
-            alpha=self.alpha,
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
@@ -640,7 +902,9 @@ class RIS_Duplex(gym.Env):
         self.compute_WWH()
         self.compute_all_channels()
 
-        self.compute_decoding_matrix()
+        # Compute decoding matrix after all channels are available
+        if self._uplink_used:
+            self.compute_decoding_matrix()
 
     def _initialize_state(self):
         """Initialize current and next state buffers for the episode."""
@@ -649,19 +913,104 @@ class RIS_Duplex(gym.Env):
 
     def compute_theta_phi(self):
         """Update cached products of `Theta` and `Phi` used across formulas."""
-        diagonal_elements = np.diag(self._Theta @ self._Phi) 
-        self._Theta_Phi = np.diag(diagonal_elements / np.abs(diagonal_elements)) 
-        self.Phi_H_Theta_H = self._Phi.conj().T @ self._Theta.conj().T
-        #self.Phi_H_Theta_H = self._Phi.T @ self._Theta.T
-        pass
+        self._Theta_Phi, self.Phi_H_Theta_H = ActionProcessor.compute_theta_phi(
+            self._Theta, self._Phi
+        )
 
     def compute_WWH(self):
         """Update cached `W @ W^H` and its diagonal; reused in SINR terms."""
-        self.WWH = self._W @ self._W.conj().T
-        self.diag_matrix_WWH = np.diag(np.diag(self.WWH)).real
-        pass
+        self.WWH, self.diag_matrix_WWH = ActionProcessor.compute_WWH(self._W)
+    
+    def _cache_matrix_products(self):
+        """Cache expensive matrix products used in state building."""
+        cached = ActionProcessor.cache_matrix_products(
+            self._Theta_Phi, self._W, self._channel_matrices, self._uplink_used,
+            self.eavesdropper_active, self._num_eavesdroppers, self.N_r, self.K, self.M,
+            self._last_theta_phi, self._last_W
+        )
+        
+        # Update cache if matrices changed
+        if cached.get("_cache_updated", False):
+            # Remove internal flags before updating
+            cache_updated = cached.pop("_cache_updated")
+            self._last_theta_phi = cached.pop("_last_theta_phi")
+            self._last_W = cached.pop("_last_W")
+            self._cached_matrix_products.update(cached)
+        else:
+            # Just update markers
+            self._last_theta_phi = cached.get("_last_theta_phi", self._last_theta_phi)
+            self._last_W = cached.get("_last_W", self._last_W)
+    
+    def _update_user_info_downlink(self, k, sinr_ratio, sinr_db, signal, interference_noise):
+        """Update comprehensive user information dictionary for downlink.
+        
+        Updates the user_info dictionary with current SINR, signal power, and
+        interference metrics. Also maintains cumulative statistics and min/max
+        tracking for the downlink direction.
+        
+        Args:
+            k: User index
+            sinr_ratio: SINR ratio (linear scale)
+            sinr_db: SINR in dB
+            signal: Signal power in Watts
+            interference_noise: Interference plus noise power in Watts
+        """
+        # Pre-compute common values
+        signal_dbm = watts_to_dbm(signal)
+        interference_dbm = watts_to_dbm(interference_noise)
+        
+        # Update user info dictionary
+        self.user_info[k]['downlink'].update({
+            'timestep': self._num_step,
+            'sinr_ratio': float(sinr_ratio),
+            'sinr_db': float(sinr_db),
+            'signal_power_watts': float(signal),
+            'signal_power_dbm': float(signal_dbm),
+            'interference_noise_watts': float(interference_noise),
+            'interference_noise_dbm': float(interference_dbm)
+        })
+        
+        # Update cumulative statistics
+        self.user_info[k]['downlink']['cumulative_signal_watts'] += signal
+        self.user_info[k]['downlink']['cumulative_interference_watts'] += interference_noise
+        
+        # Update min/max signal tracking
+        if signal < self.user_info[k]['downlink']['min_signal_watts']:
+            self.user_info[k]['downlink']['min_signal_watts'] = signal
+        if signal > self.user_info[k]['downlink']['max_signal_watts']:
+            self.user_info[k]['downlink']['max_signal_watts'] = signal
+        
+        # Update average signal strength in dBm
+        if self._num_step > 0:
+            avg_signal_watts = self.user_info[k]['downlink']['cumulative_signal_watts'] / self._num_step
+            self.user_info[k]['downlink']['avg_signal_dbm'] = float(watts_to_dbm(avg_signal_watts))
+            
+            # Update average SINR
+            avg_sinr_ratio = self.user_info[k]['downlink']['cumulative_signal_watts'] / self.user_info[k]['downlink']['cumulative_interference_watts']
+            self.user_info[k]['downlink']['avg_sinr_ratio'] = float(avg_sinr_ratio)
+            self.user_info[k]['downlink']['avg_sinr_db'] = float(watts_to_db(avg_sinr_ratio))
+    
+    def _cache_sinr_calculations(self):
+        """Cache SINR calculations to avoid redundant computations."""
+        if self._sinr_cache_valid:
+            return
 
-    # ?  ----------------------------------------------     COMPUTATION OF THE CHANNELS AND THE SIGNALS     --------------------------------------------------------------
+        # Compute and cache downlink SINR for all users via optimized helper
+        self._SINR_downlink_all_users()
+        self._cached_sinr['downlink'] = self.sinr_downlink_users.copy()
+
+        # Compute and cache uplink SINR only if uplink is used
+        if self._uplink_used:
+            self._SINR_uplink_all_users()
+            self._cached_sinr['uplink'] = self.sinr_uplink_users.copy()
+        else:
+            self._cached_sinr['uplink'] = np.zeros(self.K)
+
+        self._sinr_cache_valid = True
+
+    # ============================================================================
+    # CHANNEL COMPUTATION
+    # ============================================================================
     
     def compute_all_channels(self):
         """Compute time-varying channels for current positions.
@@ -670,30 +1019,52 @@ class RIS_Duplex(gym.Env):
         - H_RIS_Users, H_BS_Users, H_RIS_Eaves_downlink, H_RIS_Eaves_uplink, H_Users_RIS
         NOTE: BS<->RIS channels are set at reset since BS/RIS are fixed.
         """
-        #* managing downlink channels first 
-
-        self._gains_transmitter_ris_receiver[:self.K] = np.array([
-            calculate_gain_transmitter_ris_receiver(
-                transmitter_position = self._BS_position,
-                receiver_position = self.users_positions[k],
-                RIS_position = self._RIS_position,
-                RIS_Cells = self.M,
-                lambda_h=self._lambda_h,
-            ) for k in range(self.K) ])
+        # Check if positions have changed to avoid redundant computations
+        positions_changed = (
+            self._last_user_positions is None or 
+            not np.array_equal(self._last_user_positions, self.users_positions) or
+            (self.eavesdropper_active and (
+                self._last_eaves_positions is None or 
+                not np.array_equal(self._last_eaves_positions, self.eavesdroppers_positions)
+            ))
+        )
         
-        A_m = (self._lambda_h/4)**2
-        d_t = np.linalg.norm(self._BS_position - self._RIS_position)
-        gain_transmitter_to_RIS = ( A_m / (4 * np.pi * (d_t **2) ) )  
-        self._gains_transmitter_ris = np.sqrt(gain_transmitter_to_RIS)
-
-        if self.eavesdropper_active:
-            self._gains_transmitter_ris_receiver[self.K:] = np.array([
-                    calculate_gain_transmitter_ris_receiver(
-                        transmitter_position = self._BS_position,
-                        receiver_position = self.eavesdroppers_positions[eavesdropper],
-                        RIS_position = self._RIS_position,
+        # ------------------------------------------------------------------------
+        # Downlink channel gain computation
+        # ------------------------------------------------------------------------
+        if not positions_changed and self._cached_gains is not None:
+            # Reuse cached gains
+            self._gains_transmitter_ris_receiver = self._cached_gains.copy()
+        else:
+            # Compute gains only when positions have changed
+            self._gains_transmitter_ris_receiver[:self.K] = np.array([
+                calculate_gain_transmitter_ris_receiver(
+                    transmitter_position = self._BS_position,
+                    receiver_position = self.users_positions[k],
+                    RIS_position = self._RIS_position,
                     RIS_Cells = self.M,
-                    lambda_h=self._lambda_h,) for eavesdropper in range(self._num_eavesdroppers) ])
+                    lambda_h=self._lambda_h,
+                ) for k in range(self.K) ])
+            
+            A_m = (self._lambda_h/4)**2
+            d_t = np.linalg.norm(self._BS_position - self._RIS_position)
+            gain_transmitter_to_RIS = ( A_m / (4 * np.pi * (d_t **2) ) )  
+            self._gains_transmitter_ris = np.sqrt(gain_transmitter_to_RIS)
+
+            if self.eavesdropper_active:
+                self._gains_transmitter_ris_receiver[self.K:] = np.array([
+                        calculate_gain_transmitter_ris_receiver(
+                            transmitter_position = self._BS_position,
+                            receiver_position = self.eavesdroppers_positions[eavesdropper],
+                            RIS_position = self._RIS_position,
+                        RIS_Cells = self.M,
+                        lambda_h=self._lambda_h,) for eavesdropper in range(self._num_eavesdroppers) ])
+            
+            # Cache the gains and positions for next time
+            self._cached_gains = self._gains_transmitter_ris_receiver.copy()
+            self._last_user_positions = self.users_positions.copy()
+            if self.eavesdropper_active:
+                self._last_eaves_positions = self.eavesdroppers_positions.copy()
 
         if self.debugging:
             # Compute RIS -> Users channels using list comprehension
@@ -703,7 +1074,6 @@ class RIS_Duplex(gym.Env):
                     receiver_position=self.test_point_for_user,
                     W_h_t=self._M, W_h_r=1,
                     d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                    alpha=self.alpha,
                     lambda_h=self._lambda_h,
                     epsilon_h=self.rician_factor,
                     numpy_generator=self.numpy_rng, bjornson = self.bjornson,
@@ -716,7 +1086,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.users_positions[k],
                 W_h_t=self.N_t, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng,bjornson = self.bjornson,los_only = self.los_only,
@@ -730,7 +1099,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.users_positions[k],
                 W_h_t=self._M, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -744,14 +1112,15 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.eavesdroppers_positions[l],
                 W_h_t=self._M, W_h_r=1,
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
             ) for l in range(self._num_eavesdroppers)
         ])  # Shape: (L, 1, M)
 
-        #* managing uplink channels 
+        # ------------------------------------------------------------------------
+        # Uplink channel computation
+        # ------------------------------------------------------------------------
         # Compute Users -> RIS channels
         self._channel_matrices["H_Users_RIS"] = np.array([
             rician_fading_channel(
@@ -759,7 +1128,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self._RIS_position,
                 W_h_t=1, W_h_r=self._M,
                 d_h_tx=self._d_h[2], d_h_rx=self._d_h[1],
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -773,7 +1141,6 @@ class RIS_Duplex(gym.Env):
                 receiver_position=self.eavesdroppers_positions[l],
                 W_h_t=self._M, W_h_r=1, 
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3], 
-                alpha=self.alpha,
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
                 numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
@@ -782,31 +1149,35 @@ class RIS_Duplex(gym.Env):
 
 
     def compute_eavesdropper_channels(self):
-        """Compute RIS->eaves channels for both uplink and downlink."""
-        # Compute RIS -> Eavesdroppers channels for the donwlink
+        """Compute RIS->eavesdropper channels for both uplink and downlink.
+        
+        This method is called when eavesdroppers move to recompute their channels.
+        It updates both downlink and uplink channel matrices for all eavesdroppers.
+        """
+        # Compute RIS -> Eavesdroppers channels for the downlink
         H_RIS_Eaves_downlink = []
         for l in range(self._num_eavesdroppers):
             H_RIS_Eaves_downlink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
                                                                 receiver_position = self.eavesdroppers_positions[l],
                                                                 W_h_t = self._M, W_h_r = 1,
                                                                 d_h_tx = self._d_h[1], d_h_rx = self._d_h[3],
-                                                                alpha = self.alpha,
                                                                 lambda_h = self._lambda_h,
                                                                 epsilon_h = self.rician_factor,bjornson = self.bjornson,los_only = self.los_only,
                                                                 numpy_generator = self.numpy_rng) ) 
         self._channel_matrices["H_RIS_Eaves_downlink"] = np.array(H_RIS_Eaves_downlink)  # Shape: (L, 1, M)
         
         # Compute RIS -> Eavesdroppers channels for the uplink
-        H_RIS_Eaves_uplink = []
-        for l in range(self._num_eavesdroppers):
-            H_RIS_Eaves_uplink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
-                                                              receiver_position = self.eavesdroppers_positions[l],
-                                                              W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
-                                                              d_h_rx = self._d_h[3], alpha = self.alpha,
-                                                              lambda_h =  self._lambda_h,
-                                                              epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
-                                                              numpy_generator = self.numpy_rng ) ) 
-        self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
+        if self._uplink_used:
+            H_RIS_Eaves_uplink = []
+            for l in range(self._num_eavesdroppers):
+                H_RIS_Eaves_uplink.append( rician_fading_channel ( transmitter_position = self._RIS_position,
+                                                                receiver_position = self.eavesdroppers_positions[l],
+                                                                W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
+                                                                d_h_rx = self._d_h[3],
+                                                                lambda_h =  self._lambda_h,
+                                                                epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
+                                                                numpy_generator = self.numpy_rng ) ) 
+            self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
 
         pass
 
@@ -819,7 +1190,9 @@ class RIS_Duplex(gym.Env):
             self.F[:,i] = np.squeeze(combining_vector)
         pass
     
-    # ?  ----------------------------------------------     ACTION MANAGEMENT/PROCESSING FUNCTIONS    ----------------------------------------------
+    # ============================================================================
+    # ACTION PROCESSING
+    # ============================================================================
 
     def process_raw_actions(self, actor_actions):
         """Convert raw actor output tensor into `Theta` and `W`.
@@ -827,39 +1200,32 @@ class RIS_Duplex(gym.Env):
         Args:
             actor_actions (array): Raw output of the model for actions to take.
         """
-        current_actions = actor_actions.numpy()
-        self.current_actions = current_actions
-
-        #* updataing Theta
-        normalized_theta_real = current_actions[2 * self.N_t * self.K::2] 
-        normalized_theta_imag = current_actions[2 * self.N_t * self.K + 1::2] 
-        self._Theta = np.diag(normalized_theta_real + 1j * normalized_theta_imag)
-        #self._Theta = np.eye(self._M, self._M, dtype=complex)
-
-        #* updating W
-        
-        W_flattened_real = current_actions[:2 * self.N_t * self.K:2]
-        W_flattened_imag = current_actions[1:2 * self.N_t * self.K:2]
-        temporary_W = W_flattened_real + 1j * W_flattened_imag
-
-        # Directly reshape using column-major ordering
-        self._W = temporary_W.reshape(self.K, self.N_t).T
-        pass
+        self.current_actions = actor_actions.numpy() if hasattr(actor_actions, 'numpy') else actor_actions
+        self._Theta, self._W = ActionProcessor.process_raw_actions(
+            actor_actions, self.N_t, self.K, self._M
+        )
 
 
-    # ?  ----------------------------------------------     STATE MANAGEMENT FUNCTIONS    ------------------------------------------------------------------------------------------------------
+    # ============================================================================
+    # STATE MANAGEMENT
+    # ============================================================================
 
 
     def compute_previous_rate_part(self):
-        """
-        Compute the rate part at the (t-1)-th time slot. It is composed of:
-        1. The sum rate at the legitimate users
-        2. The sum rate at the BS
-        3. The sum rate at the eavesdroppers ( = 0 here)
-        4. The SSR.
-
-        These terms are stored inside the array `self.previous_rate_part`.
-        This function is used to create the state.
+        """Compute the rate information component for the previous time slot (t-1).
+        
+        This method calculates communication rates and stores them in `self.previous_rate_part`
+        for inclusion in the next state observation. The information includes:
+        
+        - Legitimate user rates: downlink and uplink communication rates
+        - Eavesdropper rates: intercepted communication rates (if eavesdroppers active)
+        - Secrecy rate: Secure Sum Rate (SSR) accounting for interception
+        
+        The format depends on `self.additional_state_info`:
+        - If False: Aggregated sums (4 values total)
+        - If True: Per-user detailed rates + positions (2K + 2K + 3 values)
+        
+        This is called during step() to prepare rate information for the next state.
         """
         if self._num_step > 0:
             # Vectorized computation for legitimate user rates and BS rates
@@ -874,7 +1240,7 @@ class RIS_Duplex(gym.Env):
             if self.eavesdropper_active:
                 eavesdroppers_rates = np.zeros((self.K, self._num_eavesdroppers))
                 sinr_matrix = np.array([
-                    [self.SINR_E_d_k_l(i, l) for l in range(self._num_eavesdroppers)]
+                    [self.SINR_Eavesdropper_Downlink_k_l(i, l) for l in range(self._num_eavesdroppers)]
                     for i in range(self.K)
                 ])
                 eavesdroppers_rates = np.log2(1 + sinr_matrix) + rates_BS[:, np.newaxis]
@@ -884,138 +1250,158 @@ class RIS_Duplex(gym.Env):
                 sum_eavesdroppers_rates = 0
                 SSR_terms = rates_legitimate_users + rates_BS
 
-            #* Trying something with additional (optional) observations infos
-            # ! only here for testing purpose
-            self.previous_rate_part[2] = sum_eavesdroppers_rates  # Sum rate at the eavesdroppers
-            self.previous_rate_part[3] = np.sum(np.maximum(0, SSR_terms))  # SSR
+            # Store fairness for next iteration
             self.previous_fairness = self.current_fairness
+            
+            # Store rate information in format determined by additional_state_info flag
             if not self.additional_state_info:
-                self.previous_rate_part[0] = np.sum(rates_legitimate_users)
-                self.previous_rate_part[1] = np.sum(rates_BS)
-                self.previous_rate_part[2] = sum_eavesdroppers_rates  # Sum rate at the eavesdroppers
-                self.previous_rate_part[3] = np.sum(np.maximum(0, SSR_terms))  # SSR
+                # Compact format: aggregated sums only
+                self.previous_rate_part[0] = np.sum(rates_legitimate_users)  # Sum downlink rate
+                self.previous_rate_part[1] = np.sum(rates_BS)                # Sum uplink rate
+                self.previous_rate_part[2] = sum_eavesdroppers_rates         # Sum eavesdropper rate
+                self.previous_rate_part[3] = np.sum(np.maximum(0, SSR_terms))  # Sum SSR
             else:
-                self.previous_rate_part[:self.K] =  rates_legitimate_users 
-                self.previous_rate_part[self.K:2 *self.K] = rates_BS
-                self.previous_rate_part[2 * self.K] = self.previous_fairness
-                self.previous_rate_part[2 * self.K + 1] = 0  # Sum rate at the eavesdroppers
-                self.previous_rate_part[2 * self.K + 2] = np.sum(np.maximum(0, SSR_terms))  # SSR
-                self.previous_rate_part[2 * self.K + 3:] = np.array(self.users_positions).flatten()
+                # Detailed format: per-user rates + metadata + positions
+                self.previous_rate_part[:self.K] = rates_legitimate_users     # Per-user downlink rates
+                self.previous_rate_part[self.K:2*self.K] = rates_BS           # Per-user uplink rates
+                self.previous_rate_part[2*self.K] = self.previous_fairness    # Current fairness index
+                self.previous_rate_part[2*self.K + 1] = sum_eavesdroppers_rates  # Sum eavesdropper rate
+                self.previous_rate_part[2*self.K + 2] = np.sum(np.maximum(0, SSR_terms))  # Sum SSR
+                # Append user positions (x, y coordinates flattened)
+                self.previous_rate_part[2*self.K + 3:] = np.array(self.users_positions).flatten()
 
         pass
 
 
     def get_state(self):
-        """Function that generates the state for the environment at the t-th time slot.
-        It is composed of 6 parts: \\
-        1°/ the rate part at the (t-1)-th time slot (see method compute_rate_part) \\
-        2°/ the cascaded channel part at the t-th time slot. \\
-        3°/ the phase noise part at the t-th time slot. \\
-        4°/ the action at the (t-1)-th time slot. \\
-        5°/ the transmit power of the BS. \\
-        6°/ the received power of the legitimate user at the (t-1)-th time slot.
-
-        The state is an attribut array of dimensions self.state_dim.
-        """
-        state = np.zeros(self.state_dim)
-        #* starting the state by the rate  part at the (t-1)-th time slot
-        state[0:self.previous_rate_dim] = self.previous_rate_part
-        #* continuing the state with the cascaded channel part
-        h_d = self._channel_matrices["H_RIS_Users"].squeeze(axis=1)  # Shape: (K,M)
-        start_index, end_index = self.previous_rate_dim, self.previous_rate_dim + self.K *self.K
-
-        # beginning with the BS-RIS-legitimate users channel G_1d
-        G_1D = h_d @ self._Theta @ self._Phi @ self._channel_matrices["H_BS_RIS"] @ self._W 
-        BS_RIS_LU_FLAT = G_1D.flatten()
-        state[start_index:end_index] = np.real(BS_RIS_LU_FLAT) # correctly managing indexing inside the state array
-        start_index, end_index = end_index, end_index + self.K *self.K
-        state[start_index:end_index]  = np.imag(BS_RIS_LU_FLAT)
-
-        # Continuing with the BS-RIS-Eavesdropper channel G_2D
-        if self.eavesdropper_active:
-            G_2D = self._channel_matrices["H_RIS_Eaves_downlink"].squeeze(axis=1) # Shape: (L, M)
-            BS_RIS_EAVES = G_2D @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS"] @ self._W
-            BS_RIS_EAVES_FLAT =  BS_RIS_EAVES.flatten()
-            start_index, end_index = end_index, end_index + self.K * self._num_eavesdroppers
-            state[start_index:end_index] = np.real(BS_RIS_EAVES_FLAT)
-            start_index, end_index = end_index, end_index + self.K * self._num_eavesdroppers
-            state[start_index:end_index] = np.imag(BS_RIS_EAVES_FLAT)
-        else:
-            start_index, end_index = end_index, end_index + 1
-            state[start_index:end_index] = 0
-            start_index, end_index = end_index, end_index + 1 
-            state[start_index:end_index] = 0
+        """Generate the observation state for the environment at the current time slot.
         
-        # Continuing with the Legitimate Users-RIS-BS channel G_1u ( Shape: (N_r, K) )
-        h_u = self._channel_matrices["H_Users_RIS"].squeeze(axis=2).T # Shape: (M, K)
-        LU_BS_RIS = self._channel_matrices["H_RIS_BS"] @ self._Theta_Phi @  h_u  # Shape: (N_r, K) # ? removed the .conj() for self._channel_matrices["H_RIS_BS"]
-        LU_BS_RIS_FLAT = LU_BS_RIS.flatten()
-        start_index, end_index = end_index, end_index + self.N_r *self.K
-        state[start_index:end_index] = np.real(LU_BS_RIS_FLAT) # correctly managing indexing inside the state array
-        start_index, end_index = end_index, end_index + self.N_r *self.K
-        state[start_index:end_index]  = np.imag(LU_BS_RIS_FLAT)
+        The state vector is composed of 6 main parts:
+        1. Previous rate information: rates at (t-1)-th time slot from previous_rate_part
+        2. Cascaded channel information: channel products at t-th time slot
+        3. Phase noise: current phase noise values
+        4. Previous action: action taken at (t-1)-th time slot
+        5. BS transmit power: current beamforming power allocation
+        6. Previous received power: power received at users at (t-1)-th time slot
 
-        # Continuing with the Legitimate Users-RIS-Eavesdroppers channel G_2u ( Shape: (L, K) )
-        if self.eavesdropper_active :
-            g_u = self._channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1) # Shape: (L, M)
-            LU_BS_EAVES = g_u@ self._Theta_Phi @  h_u  # Shape: (L, K) #? removed .conj() from g_u
-            LU_BS_EAVES_FLAT = LU_BS_EAVES.flatten()
-            start_index, end_index = end_index, end_index + self._num_eavesdroppers *self.K
-            state[start_index:end_index] = np.real(LU_BS_EAVES_FLAT) # correctly managing indexing inside the state array
-            start_index, end_index = end_index, end_index + self._num_eavesdroppers *self.K
-            state[start_index:end_index]  = np.imag(LU_BS_EAVES_FLAT)
+        Returns:
+            numpy.ndarray: State vector of dimension self.state_dim
+        """
+        # Cache matrix products for efficiency before state construction
+        self._cache_matrix_products()
+        
+        state = np.zeros(self.state_dim)
+        idx = 0  # Current index in state vector
+        
+        # ------------------------------------------------------------------------
+        # Part 1: Previous rate information (from t-1 time slot)
+        # ------------------------------------------------------------------------
+        state[idx:idx + self.previous_rate_dim] = self.previous_rate_part
+        idx += self.previous_rate_dim
+
+        # ------------------------------------------------------------------------
+        # Part 2: Cascaded channel information (at t-th time slot)
+        # ------------------------------------------------------------------------
+        # 2a. BS-RIS-Users downlink channel (G_1D): Shape (K, K)
+        G_1D = self._cached_matrix_products["G_1D"]
+        G_1D_flat = G_1D.flatten()
+        state[idx:idx + self.K * self.K] = np.real(G_1D_flat)
+        idx += self.K * self.K
+        state[idx:idx + self.K * self.K] = np.imag(G_1D_flat)
+        idx += self.K * self.K
+
+        # 2b. BS-RIS-Eavesdroppers downlink channel (G_2D): Shape (L, K) if active
+        if self.eavesdropper_active:
+            G_2D = self._cached_matrix_products["BS_RIS_EAVES"]
+            G_2D_flat = G_2D.flatten()
+            state[idx:idx + self.K * self._num_eavesdroppers] = np.real(G_2D_flat)
+            idx += self.K * self._num_eavesdroppers
+            state[idx:idx + self.K * self._num_eavesdroppers] = np.imag(G_2D_flat)
+            idx += self.K * self._num_eavesdroppers
         else:
-            start_index, end_index = end_index, end_index + 1
-            state[start_index:end_index] = 0
-            start_index, end_index = end_index, end_index+1 
-            state[start_index:end_index] = 0
+            # Placeholder zeros when eavesdroppers are inactive
+            state[idx:idx + 2] = 0
+            idx += 2
+        
+        # 2c. Users-RIS-BS uplink channel (G_1U): Shape (N_r, K) if uplink active
+        if self._uplink_used:
+            G_1U = self._cached_matrix_products["LU_BS_RIS"]
+            G_1U_flat = G_1U.flatten()
+            state[idx:idx + self.N_r * self.K] = np.real(G_1U_flat)
+            idx += self.N_r * self.K
+            state[idx:idx + self.N_r * self.K] = np.imag(G_1U_flat)
+            idx += self.N_r * self.K
+        else:
+            # Placeholder zeros when uplink is disabled
+            state[idx:idx + 2 * self.N_r * self.K] = 0
+            idx += 2 * self.N_r * self.K
 
-        #* managing the phase noise part
-        start_index, end_index = end_index, end_index + self._M
-        state[start_index:end_index]  = self.phases
+        # 2d. Users-RIS-Eavesdroppers uplink channel (G_2U): Shape (L, K) if both active
+        if self.eavesdropper_active and self._uplink_used:
+            G_2U = self._cached_matrix_products["LU_BS_EAVES"]
+            G_2U_flat = G_2U.flatten()
+            state[idx:idx + self._num_eavesdroppers * self.K] = np.real(G_2U_flat)
+            idx += self._num_eavesdroppers * self.K
+            state[idx:idx + self._num_eavesdroppers * self.K] = np.imag(G_2U_flat)
+            idx += self._num_eavesdroppers * self.K
+        else:
+            # Placeholder zeros when either is inactive
+            placeholder_size = self._num_eavesdroppers * self.K if self.eavesdropper_active else 1
+            state[idx:idx + 2 * placeholder_size] = 0
+            idx += 2 * placeholder_size
 
-        #* managing the action at the (t-1)-th time slot
-        #TODO write the code once the action choosing system is done 
-        start_index, end_index = end_index, end_index + 2 * self._M + 2 * self.N_t *self.K
-        state[start_index:end_index]  = self.previous_actions
+        # ------------------------------------------------------------------------
+        # Part 3: Phase noise (current time slot)
+        # ------------------------------------------------------------------------
+        state[idx:idx + self._M] = self.phases
+        idx += self._M
 
-        #* managing the transmit power of the BS
+        # ------------------------------------------------------------------------
+        # Part 4: Previous action (from t-1 time slot)
+        # ------------------------------------------------------------------------
+        action_dim = 2 * self._M + 2 * self.N_t * self.K
+        state[idx:idx + action_dim] = self.previous_actions
+        idx += action_dim
+
+        # ------------------------------------------------------------------------
+        # Part 5: BS transmit power (current beamforming power allocation)
+        # ------------------------------------------------------------------------
+        # Compute power norms efficiently: ||W_k||^2 for each user k
         w_conj = self._W.conj().T  # W^H
         # Compute W_k^H @ W_k for all k using batch matrix multiplication
         products = np.einsum('ij,jk->ik', w_conj, self._W)
         products_diag = np.diag(products)  # Extract diagonal elements
-        # Compute squared norms of real and imaginary parts
         real_squared_norms = np.abs(np.real(products_diag))**2
         imag_squared_norms = np.abs(np.imag(products_diag))**2
-        w_results = np.zeros(2 * self.K)
-        w_results[0::2] = real_squared_norms
-        w_results[1::2] = imag_squared_norms
-        new_end_index = end_index + 2 * self.K
-        state[end_index:new_end_index] = w_results
-        end_index = new_end_index
+        w_power_vec = np.zeros(2 * self.K)
+        w_power_vec[0::2] = real_squared_norms  # Real part: power norms
+        w_power_vec[1::2] = imag_squared_norms      # Imaginary part: zero (power is real)
+        state[idx:idx + 2 * self.K] = w_power_vec
+        idx += 2 * self.K
 
-        #* managing the received power of the legitimate user at the (t-1)-th time slot
+        # ------------------------------------------------------------------------
+        # Part 6: Previous received power (from t-1 time slot)
+        # ------------------------------------------------------------------------
+        # Compute received power norms from previous channel product
         real_G = np.real(self.previous_G_1D)
         imag_G = np.imag(self.previous_G_1D)
         real_norms = np.sum(real_G**2, axis=0)
         imag_norms = np.sum(imag_G**2, axis=0)
-        g_results = np.zeros(2 * self.K)
-        g_results[0::2] = real_norms
-        g_results[1::2] = imag_norms
-
-        # Assign to state array
-        new_end_index = end_index + 2 * self.K
-        state[end_index:new_end_index] = g_results
-        end_index = new_end_index
+        g_power_vec = np.zeros(2 * self.K)
+        g_power_vec[0::2] = real_norms  # Real part: norms
+        g_power_vec[1::2] = imag_norms
+        state[idx:idx + 2 * self.K] = g_power_vec
+        idx += 2 * self.K
         
-        self.previous_G_1D = deepcopy(G_1D) #* Updating the value of previous G_1D
+        # Update previous channel product for next iteration
+        self.previous_G_1D = G_1D.copy()
 
-        #* adding previous fairness
-        #state[-1] = self.previous_fairness
         return state
 
 
-    # ?  ----------------------------------------------     STEP FUNCTIONS    ----------------------------------------------------------------------------------------------------
+    # ============================================================================
+    # STEP FUNCTIONS
+    # ============================================================================
 
     def step(self, state, new_actions):
         self._num_step += 1
@@ -1034,17 +1420,27 @@ class RIS_Duplex(gym.Env):
         return self.state, self.current_actions, self.current_reward, self.next_state
 
 
-    def transitioning(self,new_actions):
-        """Function to operate the transition of the environment between timestep t and t+1. This function must be called after an action is taken at time t before changing the environment accordingly.
+    def transitioning(self, new_actions):
+        """Execute environment transition from timestep t to t+1.
+        
+        This function processes the new actions and updates all environment state
+        that depends on the RIS phase shifts and BS beamforming. It must be called
+        after an action is taken and before computing SINRs and rewards.
+        
+        Args:
+            new_actions: Action vector containing RIS phase shift parameters and
+                        BS beamforming weights to apply.
         """
         self.process_raw_actions(new_actions)
         self.compute_theta_phi()
         self.compute_WWH()
-        self.compute_decoding_matrix()
+        if self._uplink_used:
+            self.compute_decoding_matrix()
         pass
 
-
-    # ?  ----------------------------------------------     SINR FUNCTIONS    ------------------------------------------------------------------------------------------------------
+    # ============================================================================
+    # SINR COMPUTATION
+    # ============================================================================
 
 
     def compute_new_SINRs(self):
@@ -1055,11 +1451,22 @@ class RIS_Duplex(gym.Env):
         - Uplink SINR for all legitimate users
         - Eavesdropper downlink/uplink SINR matrices when eavesdroppers are active
         """
-        self._SINR_downlink_all_users()
-        self._SINR_uplink_all_users()
+        # Use cached SINR calculations for better performance
+        self._cache_sinr_calculations()
+        
+        # Update arrays with cached values
+        self.sinr_downlink_users = self._cached_sinr['downlink'].copy()
+        if self._uplink_used:
+            self.sinr_uplink_users = self._cached_sinr['uplink'].copy()
+        
+        # Still need to compute eavesdropper SINRs as they're not cached yet
         if self.eavesdropper_active:
             self._SINR_eavesdropper_downlink_all()
-            self._SINR_eavesdropper_uplink_all()
+            if self._uplink_used:
+                self._SINR_eavesdropper_uplink_all()
+        
+        # Invalidate cache for next step
+        self._sinr_cache_valid = False
         pass
 
 
@@ -1074,77 +1481,54 @@ class RIS_Duplex(gym.Env):
         self.sinr_downlink_users = np.zeros(self.num_users)
         self.sinr_downlink_details = {}
 
-        # Precompute useful signals
-        signal_at_BS = np.trace(np.diag(np.diag(self._W @ self._W.conj().T)).real)
-
-        total_signal_before_ris= np.sum(np.abs(self._gains_transmitter_ris * self._channel_matrices["H_BS_RIS"] @ self._W) ** 2)
-
-        signal_just_after_ris = np.sum(np.abs(self._gains_transmitter_ris * self._Theta @ self._Phi  @ self._channel_matrices["H_BS_RIS"] @ self._W) ** 2)
+        H_RIS_Users = self._channel_matrices["H_RIS_Users"]
+        H_BS_RIS = self._channel_matrices["H_BS_RIS"]
+        gains = self._gains_transmitter_ris_receiver
+        H_Users_RIS = self._channel_matrices.get("H_Users_RIS", np.zeros((self.K, self.M, 1)))
 
         for k in range(num_users):
             w_k = self._W[:, k].reshape(-1, 1)
-        
-            # Compute user signal (linear scale)
-            if self.debugging:   
-                signal = np.squeeze(
-                np.abs( np.sqrt(self._gains_transmitter_ris_receiver[k]) * 
-                       self._channel_matrices["H_RIS_Users"][k] @ 
-                       self._Theta @ self._Phi @ self._channel_matrices["H_BS_RIS"] @ w_k) ** 2
-                )
-                # Interference + noise
-                interference_noise = 1.1 * 3.981e-14
+            signal = np.squeeze(
+                np.abs(
+                    np.sqrt(gains[k]) * H_RIS_Users[k] @ self._Theta_Phi @ H_BS_RIS @ w_k
+                ) ** 2
+            )
 
-                interference_noise = Gamma_B_k(
+            # Interference + noise
+            interference_noise = Gamma_Downlink_k(
                 k, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
-                self._gains_transmitter_ris_receiver,
-                self._channel_matrices["H_BS_RIS"], self._channel_matrices["H_RIS_Users"],
-                self.kappa[-1], self._channel_matrices["H_Users_RIS"],
-                self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared
-                )
-                
-            else:
-                signal = np.squeeze(
-                np.abs( np.sqrt(self._gains_transmitter_ris_receiver[k]) * self._channel_matrices["H_RIS_Users"][k] @ self._Theta @ self._Phi @ self._channel_matrices["H_BS_RIS"] @ w_k) ** 2
-                )
-
-                """signal = np.squeeze(
-                    np.abs(self._channel_matrices["H_RIS_Users"][k] @ self._Theta @ self._Phi @ self._channel_matrices["H_BS_RIS"] @ w_k) ** 2
-                )"""
-
-                # Interference + noise
-                interference_noise = Gamma_B_k(
-                k, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
-                self._gains_transmitter_ris_receiver,
-                self._channel_matrices["H_BS_RIS"], self._channel_matrices["H_RIS_Users"],
-                self.kappa[-1], self._channel_matrices["H_Users_RIS"],
-                self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared
-                )
-    
-            # Update per-user signal statistics
-            self.downlink_signal_strength[k] += signal
-            self.min_downlink_signal_strength[k] = min(signal, self.min_downlink_signal_strength[k])
-
-            if signal > self.max_downlink_signal_strength[k]:
-                self.max_downlink_interf_k[k] = interference_noise
-                self.max_downlink_signal_strength[k] = signal
-
-            avg_signal_dbm = watts_to_dbm(self.downlink_signal_strength[k] / self._num_step)
+                gains, H_BS_RIS, H_RIS_Users, self.kappa[-1],
+                H_Users_RIS,
+                self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
+                use_inter_user_interferences=self.use_inter_user_interferences,
+            )
 
             # Compute SINR
             sinr_ratio = signal / interference_noise
-            #print(self.num_step, k, sinr_ratio, signal, interference_noise)
             self.sinr_downlink_users[k] = sinr_ratio
 
-            self.sinr_downlink_signals[k] += signal
-            self.sinr_downlink_interfs[k] += interference_noise
-
-            self.downlink_sinr_average[k] += sinr_ratio
-            
-            sinr_db = watts_to_db(sinr_ratio)
-
+            # Collect detailed stats only if verbose
             if self.verbose:
+                sinr_db = watts_to_db(sinr_ratio)
+                self._update_user_info_downlink(k, sinr_ratio, sinr_db, signal, interference_noise)
 
-                sinr_average_ratio = self.downlink_sinr_average[k]/self._num_step
+                # Legacy arrays for backward compatibility
+                self.downlink_signal_strength[k] += signal
+                self.min_downlink_signal_strength[k] = min(signal, self.min_downlink_signal_strength[k])
+                if signal > self.max_downlink_signal_strength[k]:
+                    self.max_downlink_interf_k[k] = interference_noise
+                    self.max_downlink_signal_strength[k] = signal
+
+                self.sinr_downlink_signals[k] += signal
+                self.sinr_downlink_interfs[k] += interference_noise
+                self.downlink_sinr_average[k] += sinr_ratio
+
+                if self._num_step > 0:
+                    sinr_average_ratio = self.downlink_sinr_average[k] / self._num_step
+                    avg_signal_dbm = watts_to_dbm(self.downlink_signal_strength[k] / self._num_step)
+                else:
+                    sinr_average_ratio = 0.0
+                    avg_signal_dbm = -np.inf
 
                 self.sinr_downlink_details[k] = {
                     "SINR_in_db": float(sinr_db),
@@ -1153,69 +1537,18 @@ class RIS_Duplex(gym.Env):
                     "ratio": float(sinr_ratio),
                     "direct_signal": float(signal),
                     "interference_noise": float(interference_noise),
-                    "Average interference_noise": float(watts_to_dbm(self.sinr_downlink_interfs[k]/self._num_step)),
+                    "Average interference_noise": float(watts_to_dbm(self.sinr_downlink_interfs[k] / max(self._num_step, 1))),
                     "min_signal_dbm": float(watts_to_dbm(self.min_downlink_signal_strength[k])),
                     "max_signal_dbm": float(watts_to_dbm(self.max_downlink_signal_strength[k])),
-                    "avg_signal_dbm": float(avg_signal_dbm)
+                    "avg_signal_dbm": float(avg_signal_dbm),
                 }
 
                 # Track maximum SINR globally
                 if sinr_db > self.max_sinr_b_k.get("SINR_in_db", -np.inf):
                     self.max_sinr_b_k = self.sinr_downlink_details[k]
 
-        # Optional: print log every N steps
-        if self.verbose and self._num_step > 1000 and self._num_step % 493 == 0 and self.print_info:
-            
-            if self.debugging:
-
-                signal_test_BS = np.sum(np.abs(self._channel_matrices["H_BS_Test_Point_BS"]  @ self._W[:, 0].reshape(-1, 1) ) **2)  #self._W) ** 2)
-
-                signal_test_user = np.squeeze(
-                    np.abs(self._channel_matrices["H_RIS_Test_Point"].conj() @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS_Test"] @ w_k) ** 2
-                )
-                signal_test_2 = np.squeeze(
-                    np.abs(self._channel_matrices["H_RIS_Test_Point"].conj() @ self._Theta_Phi @ self._channel_matrices["H_BS_RIS_Test"] @ w_k) ** 2
-                )
-            if self.debugging:
-                print("\n" + "=" * 200)
-                print(f"{' DOWNLINK SIGNAL STATISTICS (Step {}) '.format(self._num_step):=^200}")
-                print("=" * 200)
-                print(f"{'Total power deployed at the BS:':<40} {signal_at_BS:.6e} W ({watts_to_dbm(signal_at_BS):.2f} dBm)")
-                print(f"{'Total power received at the RIS (all users):':<40} {watts_to_dbm(total_signal_before_ris):.2f} dBm")
-                print(f"{'Total power at the RIS after its reflection:':<40} {watts_to_dbm(signal_just_after_ris):.2f} dBm")
-                if self.debugging:
-                    print(f'The signal to the test point for BS (NLOS only) at {self.test_point_for_BS} is {watts_to_dbm(signal_test_BS):.2f} dBm')
-                print("-" * 200)
-                # RIS and users positions
-                users_positions_str = " / ".join([f"User {k} -> {self.users_positions[k]}" for k in range(num_users)])
-                print(f"RIS position: {self.RIS_position} | User positions: {users_positions_str}")
-                print("-" * 200)
-                # Column headers
-                print(f"{'User':<6} {'Min Signal (dBm)':>18} {'Max Signal (dBm)':>18} {'Avg Signal (dBm)':>18} {'Avg SINR (dB)':>18} {'Avg SINR (ratio)':>18} {'SINR (dB) for Max':>18} {'SINR (ratio) for Max ':>25} {' Interference for Max (dBm)':>25} {'Avg Interference (dBm)':>25}")
-                print("-" * 200)
-
-                # Data rows
-                for k in range(num_users):
-                    stats = self.sinr_downlink_details[k]
-                    print(f"{k:<6} "
-                        f"{stats['min_signal_dbm']:>18.4f} "
-                        f"{stats['max_signal_dbm']:>18.4f} "
-                        f"{stats['avg_signal_dbm']:>18.4f} "
-                        f"{stats['Average_SINR_in_db']:>18.4f}"
-                        f"{stats['Average_SINR_ratio']:>18.4f}"
-                        f"{watts_to_db(self.max_downlink_signal_strength[k] / self.max_downlink_interf_k[k]):>18.4f}"
-                        f"{self.max_downlink_signal_strength[k] / self.max_downlink_interf_k[k]:>25.4f}"
-                        f"{watts_to_dbm(self.max_downlink_interf_k[k]):>25.4f}"
-                        f"{stats['Average interference_noise']:>25.4f}")
-                print("-" * 200)
-                print(f'The signal to the user is {watts_to_dbm(signal)}')
-                if self.debugging:
-                    print(f'The signal to the test point for user point at {self.test_point_for_user} is {watts_to_dbm(signal_test_user)}')
-                    print(f'The signal to the test point for user point without .conj() is {watts_to_dbm(signal_test_2 )}')
-                    print(f'Difference of signal strength between user and test point for user is  {watts_to_dbm(signal) - watts_to_dbm(signal_test_user)}')
-                print("=" * 200 + "\n")
         pass
-
+        
 
 
     def _SINR_uplink_all_users(self):
@@ -1226,11 +1559,17 @@ class RIS_Duplex(gym.Env):
         Returns:
             np.ndarray: SINR ratios per user
         """
-        
-        self.sinr_uplink_users = np.zeros(self.K)
+        if not self._uplink_used:
+            self.sinr_uplink_users = np.zeros(self.K)
+            return
+
         self.sinr_s_details = {}
+
+        H_RIS_BS = self._channel_matrices["H_RIS_BS"]
+        H_Users_RIS = self._channel_matrices["H_Users_RIS"]
+        gains = self._gains_transmitter_ris_receiver
+
         for k in range(self.K):
-            f_u_k = self.F[:, k].reshape(-1, 1)
             # If user has no transmit power, SINR is zero
             if self.P_users[k] == 0:
                 self.sinr_uplink_users[k] = 0
@@ -1239,50 +1578,76 @@ class RIS_Duplex(gym.Env):
                         "SINR_in_db": -np.inf,
                         "ratio": 0.0,
                         "direct_signal": 0.0,
-                        "interference_noise": 0.0
+                        "interference_noise": 0.0,
                     }
                 continue
 
-            # Compute direct signal power at the BS for user k
+            f_u_k = self.F[:, k].reshape(-1, 1)
+            # Direct signal power at the BS for user k
             signal = np.squeeze(
-                self.P_users[k] *
-                np.abs(np.sqrt(self._gains_transmitter_ris_receiver[k]) * 
-                    f_u_k.T @
-                    self._channel_matrices["H_RIS_BS"] @
-                    self._Theta_Phi @
-                    self._channel_matrices["H_Users_RIS"][k]
-                ) ** 2
+                self.P_users[k]
+                * np.abs(
+                    np.sqrt(gains[k]) * f_u_k.T @ H_RIS_BS @ self._Theta_Phi @ H_Users_RIS[k]
+                )
+                ** 2
             )
-
-            # Compute interference + noise power for user k
-            interference_noise = Gamma_S_k(
-                self.K, k, self._Theta_Phi,self._gains_transmitter_ris_receiver,
-                self._channel_matrices["H_Users_RIS"],
-                self._channel_matrices["H_RIS_BS"], f_u_k,
-                self.P_users, self.kappa[0],
-                self.delta_k_squared
+            # Interference + noise power for user k
+            interference_noise = Gamma_Uplink_k(
+                self.K, k, self._Theta_Phi, gains, H_Users_RIS, H_RIS_BS, f_u_k,
+                self.P_users, self.kappa[0], self.delta_k_squared,
+                use_inter_user_interferences=self.use_inter_user_interferences,
             )
-
             # Compute SINR
             sinr_ratio = signal / interference_noise
             self.sinr_uplink_users[k] = sinr_ratio
-            sinr_db = 10 * np.log10(sinr_ratio)
 
-            # Store details if verbose mode is enabled
             if self.verbose:
+                sinr_db = watts_to_db(sinr_ratio)
+                # Update comprehensive user information dictionary
+                self.user_info[k]['uplink'].update({
+                    'sinr_ratio': float(sinr_ratio),
+                    'sinr_db': float(sinr_db),
+                    'signal_power_watts': float(signal),
+                    'signal_power_dbm': float(watts_to_dbm(signal)),
+                    'interference_noise_watts': float(interference_noise),
+                    'interference_noise_dbm': float(watts_to_dbm(interference_noise))
+                })
+                # Update cumulative statistics
+                self.user_info[k]['uplink']['cumulative_signal_watts'] += signal
+                self.user_info[k]['uplink']['cumulative_interference_watts'] += interference_noise
+                # Update min/max signal tracking
+                if signal < self.user_info[k]['uplink']['min_signal_watts']:
+                    self.user_info[k]['uplink']['min_signal_watts'] = signal
+                if signal > self.user_info[k]['uplink']['max_signal_watts']:
+                    self.user_info[k]['uplink']['max_signal_watts'] = signal
+                # Update average signal strength in dBm
+                if self._num_step > 0:
+                    avg_signal_watts = self.user_info[k]['uplink']['cumulative_signal_watts'] / self._num_step
+                    self.user_info[k]['uplink']['avg_signal_dbm'] = float(watts_to_dbm(avg_signal_watts))
+                    # Update average SINR
+                    avg_sinr_ratio = (
+                        self.user_info[k]['uplink']['cumulative_signal_watts']
+                        / max(self.user_info[k]['uplink']['cumulative_interference_watts'], 1e-30)
+                    )
+                    self.user_info[k]['uplink']['avg_sinr_ratio'] = float(avg_sinr_ratio)
+                    self.user_info[k]['uplink']['avg_sinr_db'] = float(watts_to_db(avg_sinr_ratio))
+
+                # Legacy arrays for backward compatibility
+                self.uplink_signal_strength[k] += signal
                 self.sinr_s_details[k] = {
                     "SINR_in_db": float(sinr_db),
                     "ratio": float(sinr_ratio),
                     "direct_signal": float(signal),
-                    "interference_noise": float(interference_noise)
+                    "interference_noise": float(interference_noise),
                 }
-
                 # Track the maximum SINR seen at the BS
                 if sinr_db > self.max_sinr_s_k.get("SINR_in_db", -np.inf):
                     self.max_sinr_s_k = self.sinr_s_details[k]
         pass        
 
-    def SINR_E_d_k_l(self, k: int, l: int):
+
+
+    def SINR_Eavesdropper_Downlink_k_l(self, k: int, l: int):
         """Return precomputed downlink SINR observed at eavesdropper l for user k.
 
         Args:
@@ -1298,7 +1663,7 @@ class RIS_Duplex(gym.Env):
         return self.sinr_eavesdropper_downlink[k, l]
     
 
-    def SINR_E_u_k_l(self, k: int, l: int):
+    def SINR_Eavesdropper_Uplink_k_l(self, k: int, l: int):
         """Return precomputed uplink SINR observed at eavesdropper l for user k.
 
         Args:
@@ -1308,9 +1673,13 @@ class RIS_Duplex(gym.Env):
         Returns:
             float: SINR ratio at eavesdropper l on the uplink signal from user k.
         """
+        if not self._uplink_used:
+            return 0.0
         if not hasattr(self, "sinr_eavesdropper_uplink") or self.sinr_eavesdropper_uplink.shape != (self.K, self._num_eavesdroppers):
             self._SINR_eavesdropper_uplink_all()
         return self.sinr_eavesdropper_uplink[k, l]
+
+
 
     def _SINR_eavesdropper_downlink_all(self):
         """Compute downlink SINR at all eavesdroppers for every user.
@@ -1354,7 +1723,42 @@ class RIS_Duplex(gym.Env):
                     self.kappa[0],
                     self.mu_d_l_squared,
                 )
-                self.sinr_eavesdropper_downlink[k, l] = signal_power_at_eaves / interference_plus_noise
+                
+                # Compute SINR
+                sinr_ratio = signal_power_at_eaves / interference_plus_noise
+
+                if self.verbose:
+                    # Update comprehensive eavesdropper information dictionary
+                    self.eavesdropper_info[l]['downlink']['sinr_ratios'][k] = sinr_ratio
+                    self.eavesdropper_info[l]['downlink']['signal_powers_watts'][k] = signal_power_at_eaves
+                    self.eavesdropper_info[l]['downlink']['signal_powers_dbm'][k] = watts_to_dbm(signal_power_at_eaves)
+                    self.eavesdropper_info[l]['downlink']['interference_noise_watts'][k] = interference_plus_noise
+                    self.eavesdropper_info[l]['downlink']['interference_noise_dbm'][k] = watts_to_dbm(interference_plus_noise)
+                    
+                    # Update cumulative statistics
+                    self.eavesdropper_info[l]['downlink']['cumulative_signal_watts'][k] += signal_power_at_eaves
+                    self.eavesdropper_info[l]['downlink']['cumulative_interference_watts'][k] += interference_plus_noise
+                    
+                    # Update min/max signal tracking
+                    if signal_power_at_eaves < self.eavesdropper_info[l]['downlink']['min_signal_watts'][k]:
+                        self.eavesdropper_info[l]['downlink']['min_signal_watts'][k] = signal_power_at_eaves
+                    if signal_power_at_eaves > self.eavesdropper_info[l]['downlink']['max_signal_watts'][k]:
+                        self.eavesdropper_info[l]['downlink']['max_signal_watts'][k] = signal_power_at_eaves
+                    
+                    # Update average signal strength in dBm
+                    if self._num_step > 0:
+                        avg_signal_watts = self.eavesdropper_info[l]['downlink']['cumulative_signal_watts'][k] / self._num_step
+                        self.eavesdropper_info[l]['downlink']['avg_signal_dbm'][k] = watts_to_dbm(avg_signal_watts)
+                        
+                        # Update average SINR
+                        avg_sinr_ratio = self.eavesdropper_info[l]['downlink']['cumulative_signal_watts'][k] / self.eavesdropper_info[l]['downlink']['cumulative_interference_watts'][k]
+                        self.eavesdropper_info[l]['downlink']['avg_sinr_ratios'][k] = avg_sinr_ratio
+                        self.eavesdropper_info[l]['downlink']['avg_sinr_db'][k] = watts_to_db(avg_sinr_ratio)
+                
+                # Legacy array for backward compatibility
+                self.sinr_eavesdropper_downlink[k, l] = sinr_ratio
+
+
 
     def _SINR_eavesdropper_uplink_all(self):
         """Compute uplink SINR at all eavesdroppers for every user.
@@ -1362,12 +1766,19 @@ class RIS_Duplex(gym.Env):
         Results are stored in `self.sinr_eavesdropper_uplink` with shape (K, L),
         where K is the number of users and L is the number of eavesdroppers.
         """
-        if not self.eavesdropper_active or self._num_eavesdroppers == 0:
+        if (not self.eavesdropper_active) or (not self._uplink_used):
             self.sinr_eavesdropper_uplink = np.zeros((self.K, 0))
             return
         self.sinr_eavesdropper_uplink = np.zeros((self.K, self._num_eavesdroppers))
         for k in range(self.K):
             if self.P_users[k] == 0:
+                # Update eavesdropper information for zero power case
+                for l in range(self._num_eavesdroppers):
+                    self.eavesdropper_info[l]['uplink']['sinr_ratios'][k] = 0.0
+                    self.eavesdropper_info[l]['uplink']['signal_powers_watts'][k] = 0.0
+                    self.eavesdropper_info[l]['uplink']['signal_powers_dbm'][k] = -np.inf
+                    self.eavesdropper_info[l]['uplink']['interference_noise_watts'][k] = 0.0
+                    self.eavesdropper_info[l]['uplink']['interference_noise_dbm'][k] = -np.inf
                 continue
             for l in range(self._num_eavesdroppers):
                 # Direct signal power received at eavesdropper l from user k
@@ -1400,7 +1811,46 @@ class RIS_Duplex(gym.Env):
                 )
                 self.sinr_eavesdropper_uplink[k, l] = signal_power_at_eaves / interference_plus_noise
 
-    # ?  ----------------------------------------------     REWARD FUNCTIONS    ------------------------------------------------------------------------------------------------------
+                # Compute SINR
+                sinr_ratio = signal_power_at_eaves / interference_plus_noise
+                sinr_db = watts_to_db(sinr_ratio)
+                
+                # Update comprehensive eavesdropper information dictionary
+                self.eavesdropper_info[l]['uplink']['sinr_ratios'][k] = sinr_ratio
+                self.eavesdropper_info[l]['uplink']['signal_powers_watts'][k] = signal_power_at_eaves
+                self.eavesdropper_info[l]['uplink']['signal_powers_dbm'][k] = watts_to_dbm(signal_power_at_eaves)
+                self.eavesdropper_info[l]['uplink']['interference_noise_watts'][k] = interference_plus_noise
+                self.eavesdropper_info[l]['uplink']['interference_noise_dbm'][k] = watts_to_dbm(interference_plus_noise)
+                
+                # Update cumulative statistics
+                self.eavesdropper_info[l]['uplink']['cumulative_signal_watts'][k] += signal_power_at_eaves
+                self.eavesdropper_info[l]['uplink']['cumulative_interference_watts'][k] += interference_plus_noise
+                
+                # Update min/max signal tracking
+                if signal_power_at_eaves < self.eavesdropper_info[l]['uplink']['min_signal_watts'][k]:
+                    self.eavesdropper_info[l]['uplink']['min_signal_watts'][k] = signal_power_at_eaves
+                if signal_power_at_eaves > self.eavesdropper_info[l]['uplink']['max_signal_watts'][k]:
+                    self.eavesdropper_info[l]['uplink']['max_signal_watts'][k] = signal_power_at_eaves
+                
+                # Update average signal strength in dBm
+                if self._num_step > 0:
+                    avg_signal_watts = self.eavesdropper_info[l]['uplink']['cumulative_signal_watts'][k] / self._num_step
+                    self.eavesdropper_info[l]['uplink']['avg_signal_dbm'][k] = watts_to_dbm(avg_signal_watts)
+                    
+                    # Update average SINR
+                    avg_sinr_ratio = self.eavesdropper_info[l]['uplink']['cumulative_signal_watts'][k] / self.eavesdropper_info[l]['uplink']['cumulative_interference_watts'][k]
+                    self.eavesdropper_info[l]['uplink']['avg_sinr_ratios'][k] = avg_sinr_ratio
+                    self.eavesdropper_info[l]['uplink']['avg_sinr_db'][k] = watts_to_db(avg_sinr_ratio)
+                
+                # Legacy array for backward compatibility
+                self.sinr_eavesdropper_uplink[k, l] = sinr_ratio
+
+
+
+
+    # ============================================================================
+    # REWARD COMPUTATION
+    # ============================================================================
     
 
 
@@ -1422,7 +1872,7 @@ class RIS_Duplex(gym.Env):
         # Iterate over all users k
         for k in range(self.K):  # Assuming self.K represents the total number of users
             # Calculate R_E_k_all_l for user k
-            R_E_k_all_l = np.array([np.log2(1 + self.SINR_E_d_k_l(k, l)) + np.log2(1 + self.SINR_E_u_k_l(k,l)) for l in range(self._num_eavesdroppers)])
+            R_E_k_all_l = np.array([np.log2(1 + self.SINR_Eavesdropper_Downlink_k_l(k, l)) + np.log2(1 + self.SINR_Eavesdropper_Uplink_k_l(k,l)) for l in range(self._num_eavesdroppers)])
 
             # Add the maximum value for this user to the total reward
             indice_max = np.argmax(R_E_k_all_l)
@@ -1432,8 +1882,8 @@ class RIS_Duplex(gym.Env):
             if self.verbose:
                 self.all_eavesdroppers_rewards[k] =  deepcopy(max_eave_reward_for_user_k)
                 self.detailed_eavesdroppers_rewards[k] = {"Total interception":np.float16(max_eave_reward_for_user_k),
-                "Downlink interception":np.float16(np.log2(1 + self.SINR_E_d_k_l(k, indice_max))),
-                "Uplink interception": np.float16(np.log2(1 + self.SINR_E_u_k_l(k,indice_max))) }
+                "Downlink interception":np.float16(np.log2(1 + self.SINR_Eavesdropper_Downlink_k_l(k, indice_max))),
+                "Uplink interception": np.float16(np.log2(1 + self.SINR_Eavesdropper_Uplink_k_l(k,indice_max))) }
 
         return eavesdroppers_reward
     
@@ -1480,13 +1930,10 @@ class RIS_Duplex(gym.Env):
         self.users_current_rewards = np.zeros(self.K)
         self.users_current_basic_rewards = np.zeros(self.K)
         self.current_reward = 0
-
         # Pre-compute basic reward once to avoid duplicate calls
-        #if self.verbose:
-        
         self.basic_reward_per_user, self.basic_reward_total, basic_reward_details = compute_basic_reward(
             self.K, self._num_eavesdroppers, self.sinr_downlink_users, self.sinr_uplink_users,
-                        self.SINR_E_d_k_l, self.SINR_E_u_k_l, self.eavesdropper_active,
+                        self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l, self.eavesdropper_active,
                         verbose = True
         )
         self.user_reward_detail = basic_reward_details  
@@ -1502,9 +1949,6 @@ class RIS_Duplex(gym.Env):
         def apply_reward_function(reward_function, current_rewards_dict):
             if reward_function == compute_basic_reward:
                 # Use pre-computed basic reward
-                
-                # if self.verbose:
-                    
                 current_rewards_dict["basic_reward_details"] = basic_reward_details
                 current_rewards_dict["basic_reward_per_user"] = self.basic_reward_per_user
                 current_rewards_dict["total_basic_reward"] = self.basic_reward_total  # Use the total from pre-computation
@@ -1516,7 +1960,7 @@ class RIS_Duplex(gym.Env):
                     self.target_secrecy_rate,
                     self.target_date_rate,
                     self.sinr_downlink_users, self.sinr_uplink_users,
-                    self.SINR_E_d_k_l, self.SINR_E_u_k_l,
+                    self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l,
                     self.eavesdropper_active
                 )
                 current_rewards_dict["qos_reward_per_user"] = reward_per_user
@@ -1527,8 +1971,7 @@ class RIS_Duplex(gym.Env):
                 reward_per_user, total_reward = reward_function(
                     self.K, self._num_eavesdroppers,
                     self.sinr_downlink_users, self.sinr_uplink_users,
-                    self.SINR_E_d_k_l, self.SINR_E_u_k_l, self.eavesdropper_active,
-                    p = self.qos_p
+                    self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l, self.eavesdropper_active,
                 )
                 current_rewards_dict["minmax_reward_per_user"] = reward_per_user
                 current_rewards_dict["total_minmax_reward"] = total_reward
@@ -1539,7 +1982,7 @@ class RIS_Duplex(gym.Env):
                 reward_per_user, total_reward = reward_function(
                     self.K, self._num_eavesdroppers,
                     self.sinr_downlink_users, self.sinr_uplink_users,
-                    self.SINR_E_d_k_l, self.SINR_E_u_k_l, self.eavesdropper_active,
+                    self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l, self.eavesdropper_active,
                     minmax_smoothed_p = self.p_f
                 )
                 current_rewards_dict["minmax_smoothed_reward_per_user"] = reward_per_user
@@ -1594,7 +2037,9 @@ class RIS_Duplex(gym.Env):
         pass
 
     
-    #? ----------------------------------------------     MANAGING THE MOVEMENT OF EAVESDROPPERS    ------------------------------------------------------------------------------------------------------
+    # ============================================================================
+    # EAVESDROPPER MOBILITY
+    # ============================================================================
 
     def move_eavesdroppers(self, mobility_pattern):
         """Move the eavesdroppers according to the specified mobility pattern.
@@ -1611,83 +2056,39 @@ class RIS_Duplex(gym.Env):
         pass
 
 
-     # ?  ----------------------------------------------     Power Patterns functions   ------------------------------------------------------------------------------------------------------
+    # ============================================================================
+    # POWER PATTERN COMPUTATION
+    # ============================================================================
 
     def RIS_W_compute_power_pattern(self):
-        """
-        Precompute data for a single frame.
-
-        Parameters:
-        - Theta_Phi: Phase shifts.
-
+        """Compute BS array power patterns.
+        
         Returns:
-        - Power pattern.
+            numpy.ndarray: Power patterns of shape (K, 360)
         """
-        power_patterns = np.zeros((self.K, 360))
-        for k in range(self.K):
-
-            if self.debugging:
-                Sended_Signal_Downlink_user_k =  self._W[:,k]
-                #Sended_Signal_Downlink_user_k =  self.fixed_W_to_use
-            else:
-                Sended_Signal_Downlink_user_k =  self._W[:,k]
-
-            E_total = np.zeros_like(self.angles, dtype=complex)
-            for i, theta in enumerate(self.angles):
-                spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[0] * np.arange(self.N_t) * np.sin(-theta)
-                #spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[0] * np.arange(self.N_t) * np.cos(theta) #? use this or the one above ? 
-                E_total[i] = np.sum(Sended_Signal_Downlink_user_k * np.exp(1j * spatial_phase))
-            power_patterns[k] = np.abs(E_total) ** 2
-        return power_patterns
-
+        return PowerPatternComputer.RIS_W_compute_power_pattern(
+            self._W, self.K, self.N_t, self._lambda_h, self._d_h, 
+            self.angles, self.debugging
+        )
 
     def RIS_downlink_compute_power_patterns(self):
-        """
-        Precompute data for a single frame.
-
-        Parameters:
-        - Theta_Phi: Phase shifts.
-
+        """Compute RIS downlink power patterns.
+        
         Returns:
-        - Power pattern.
+            numpy.ndarray: Power patterns of shape (K, 360)
         """
-        power_patterns = np.zeros((self.K, 360))
-        BS_RIS_channel = self._channel_matrices["H_BS_RIS"]
-        for k in range(self.K):
-
-            if self.debugging:
-                Reflected_Signal_Downlink_user_k = self._Theta @ BS_RIS_channel @ self._W[:,k]
-                #Reflected_Signal_Downlink_user_k = self._Theta_Phi  @ self.fixed_W_to_use
-            else:
-                Reflected_Signal_Downlink_user_k = self._Theta @ BS_RIS_channel @ self._W[:,k]
-
-            E_total = np.zeros_like(self.angles, dtype=complex)
-            for i, theta in enumerate(self.angles):
-                spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[1] * np.arange(self.M) * np.sin(-theta)
-                #spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[1] * np.arange(self.M) * -1 * np.cos(theta) #? use this or the one above ? 
-                E_total[i] = np.sum(Reflected_Signal_Downlink_user_k * np.exp(1j * spatial_phase))
-            power_patterns[k] = deepcopy(np.abs(E_total) ** 2)
-        return power_patterns
-    
+        return PowerPatternComputer.RIS_downlink_compute_power_patterns(
+            self._Theta_Phi, self._channel_matrices["H_BS_RIS"], self._W,
+            self.K, self.M, self._lambda_h, self._d_h, self.angles, self.debugging
+        )
 
     def RIS_uplink_compute_power_patterns(self):
-        """
-        Precompute data for a single frame.
-
-        Parameters:
-        - Theta_Phi: Phase shifts.
-
+        """Compute RIS uplink power patterns.
+        
         Returns:
-        - Power pattern.
+            numpy.ndarray: Power patterns of shape (K, 360)
         """
-        power_patterns = np.zeros((self.K, 360))
-        User_RIS_channels = self._channel_matrices["H_Users_RIS"]
-        for k in range(self.K):
-            Reflected_Signal_Uplink_user_k = (np.sqrt(self.P_users[k])  * self._Theta_Phi @ User_RIS_channels[k])[:,0]
-            E_total = np.zeros_like(self.angles, dtype=complex)
-            for i, theta in enumerate(self.angles):
-                spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[1] * np.arange(self.M) * np.sin(-theta)
-                #spatial_phase = (2 * np.pi / self.lambda_h) * self._d_h[1] * np.arange(self.M) * np.cos(theta) #? use this or the one above ? 
-                E_total[i] = np.sum(Reflected_Signal_Uplink_user_k * np.exp(1j * spatial_phase))
-            power_patterns[k] = np.abs(E_total) ** 2
-        return power_patterns
+        return PowerPatternComputer.RIS_uplink_compute_power_patterns(
+            self._Theta_Phi, self._channel_matrices["H_Users_RIS"], self.P_users,
+            self.K, self.M, self._lambda_h, self._d_h, self.angles
+        )

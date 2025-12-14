@@ -105,7 +105,7 @@ def select_functions(config_key, authorized_list, authorized_dict, env_config):
     - ValueError: If any of the chosen functions are not in the authorized list.
     """
     if config_key == 'decisive_reward_functions':
-        default = ["basic_reward"]
+        default = ["baseline_reward"]
     elif config_key == "informative_reward_functions":
         default = []
     elif config_key == "fairness_functions":

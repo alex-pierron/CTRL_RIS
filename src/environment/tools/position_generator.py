@@ -24,7 +24,8 @@ class PositionGenerator:
                  RIS_position,
                  numpy_generator, 
                  num_eavesdroppers : int = 0,
-                 angle_difference_between_user = 10):
+                 angle_difference_between_user = 10,
+                 min_distance : float = 0.0):
         """
         Constructs all the necessary attributes for the PositionGenerator object.
 
@@ -44,6 +45,7 @@ class PositionGenerator:
         self.angle_difference_between_user = angle_difference_between_user
         self.angle_is_max = False
         self.fully_random_positioning = False
+        self.min_distance = min_distance
 
         self.min_angle = -np.arctan((self.RIS_position[1]-self.grid_limits[1][1])/(self.grid_limits[0][1]-self.RIS_position[0]))
 
@@ -55,6 +57,9 @@ class PositionGenerator:
 
         self.min_distance_eavesdropper_users = 2
         self.max_distance_eavesdropper_users = np.inf
+        
+        # Initialize y_axis_upper_limit_aligned
+        self.y_axis_upper_limit_aligned = (self.grid_limits[1][1] - self.RIS_position[1] == 0)
 
     def update_generation_condition(self,new_user_limits,
                                     is_angle_given_a_max, 
@@ -101,31 +106,59 @@ class PositionGenerator:
         if self.fully_random_positioning:
             return self.generate_random_users_positions()
 
-        if self.num_users >= 3:
-            zone_for_first_user_position_to_sample = self.numpy_generator.integers(low=-1, high=2, size=1)[0]
-        else:
-            zone_for_first_user_position_to_sample = 1
-        
-        user_coordinates = np.zeros((self.num_users, 2))
-        
-        if zone_for_first_user_position_to_sample == 1:
-            # Anti-clockwise sampling from -π/2 to 0
-            angles = self._generate_angles_anticlockwise()
-        elif zone_for_first_user_position_to_sample == -1:
-            # Clockwise sampling from -π/2 to 0
-            angles = self._generate_angles_clockwise()
-        else:  # zone == 0
-            # Symmetric sampling around -π/2
-            angles = self._generate_angles_symmetric()
-        
-        # Generate coordinates for all users
-        for i, angle in enumerate(angles):
-            angle = np.round(angle, 2)  # Round angle to 0.01
-            user_coordinates[i] = self._generate_position_at_angle(angle)
-        
-        # Shuffle positions and return
-        user_positions = self.numpy_generator.permutation(user_coordinates)
-        return np.round(user_positions, 1)  # Round positions to 0.1
+        try:
+            if self.num_users >= 3:
+                zone_for_first_user_position_to_sample = self.numpy_generator.integers(low=-1, high=2, size=1)[0]
+            else:
+                zone_for_first_user_position_to_sample = 1
+            user_coordinates = np.zeros((self.num_users, 2))
+            if zone_for_first_user_position_to_sample == 1:
+                # Anti-clockwise sampling from -π/2 to 0
+                angles = self._generate_angles_anticlockwise()
+            elif zone_for_first_user_position_to_sample == -1:
+                # Clockwise sampling from -π/2 to 0
+                angles = self._generate_angles_clockwise()
+            else:  # zone == 0
+                # Symmetric sampling around -π/2
+                angles = self._generate_angles_symmetric()
+            
+            # Generate coordinates for all users with minimum distance constraint
+            for i, angle in enumerate(angles):
+                angle = np.round(angle, 2)  # Round angle to 0.01
+                
+                try:
+                    position = self._generate_position_at_angle(angle)
+                except Exception as e:
+                    # If angle-based generation fails, use fallback
+                    position = self._fallback_position_generation()
+                
+                # Ensure minimum distance from previously generated positions
+                attempts = 0
+                max_attempts = 1000
+                while attempts < max_attempts:
+                    if i == 0 or self._check_minimum_distance(position, user_coordinates[:i]):
+                        user_coordinates[i] = position
+                        break
+                    else:
+                        # Generate new position at the same angle
+                        try:
+                            position = self._generate_position_at_angle(angle)
+                        except:
+                            position = self._fallback_position_generation()
+                        attempts += 1
+                
+                if attempts >= max_attempts:
+                    # Fallback: use the last generated position
+                    user_coordinates[i] = position
+            
+            # Shuffle positions and return
+            user_positions = self.numpy_generator.permutation(user_coordinates)
+            return np.round(user_positions, 1)  # Round positions to 0.1
+            
+        except Exception as e:
+            # If everything fails, fall back to random positioning
+            print(f"Warning: generate_new_users_positions failed with error: {e}. Falling back to random positioning.")
+            return self.generate_random_users_positions()
 
 
     def _generate_angles_anticlockwise(self):
@@ -142,7 +175,7 @@ class PositionGenerator:
                 # Last user: sample up to 0
                 angle = self.numpy_generator.uniform(
                     low=angles[-1] + self.angle_difference_between_user,
-                    high= self.min_angle
+                    high=max(angles[-1] + self.angle_difference_between_user, self.min_angle)
                 )
             else:
                 # Middle users: progressive sampling
@@ -161,22 +194,28 @@ class PositionGenerator:
         for i in range(self.num_users):
             if i == 0:
                 # First user: sample near 0
-                angle = self.numpy_generator.uniform(
-                    low=-2 * self.angle_difference_between_user,
-                    high=self.min_angle
-                )
+                low = -2 * self.angle_difference_between_user
+                high = self.min_angle
+                # Ensure valid range
+                if high <= low:
+                    high = low + self.angle_difference_between_user
+                angle = self.numpy_generator.uniform(low=low, high=high)
             elif i == self.num_users - 1:
                 # Last user: sample down to -π/2
-                angle = self.numpy_generator.uniform(
-                    low=self.max_angle,
-                    high=angles[-1] - self.angle_difference_between_user
-                )
+                low = self.max_angle
+                high = angles[-1] - self.angle_difference_between_user
+                # Ensure valid range
+                if high <= low:
+                    high = low + self.angle_difference_between_user
+                angle = self.numpy_generator.uniform(low=low, high=high)
             else:
                 # Middle users: progressive sampling
-                angle = self.numpy_generator.uniform(
-                    low=-2 * i * self.angle_difference_between_user,
-                    high=angles[-1] - self.angle_difference_between_user
-                )
+                low = -2 * i * self.angle_difference_between_user
+                high = angles[-1] - self.angle_difference_between_user
+                # Ensure valid range
+                if high <= low:
+                    high = low + self.angle_difference_between_user
+                angle = self.numpy_generator.uniform(low=low, high=high)
             
             angles.append(angle)
         
@@ -207,31 +246,39 @@ class PositionGenerator:
                 # Even indices: sample towards 0
                 if i == even_indices[-1]:
                     # Last even index
-                    angle_even = self.numpy_generator.uniform(
-                        low=angle_even + self.angle_difference_between_user,
-                        high= self.min_angle
-                    )
+                    low = angle_even + self.angle_difference_between_user
+                    high = self.min_angle
+                    # Ensure valid range
+                    if high <= low:
+                        high = low + self.angle_difference_between_user
+                    angle_even = self.numpy_generator.uniform(low=low, high=high)
                 else:
                     # Other even indices
-                    angle_even = self.numpy_generator.uniform(
-                        low=angle_even + self.angle_difference_between_user,
-                        high=angle_even + 2 * self.angle_difference_between_user
-                    )
+                    low = angle_even + self.angle_difference_between_user
+                    high = angle_even + 2 * self.angle_difference_between_user
+                    # Ensure valid range
+                    if high <= low:
+                        high = low + self.angle_difference_between_user
+                    angle_even = self.numpy_generator.uniform(low=low, high=high)
                 angles.append(angle_even)
             else:
                 # Odd indices: sample towards -π/2
                 if i == odd_indices[-1]:
                     # Last odd index
-                    angle_odd = self.numpy_generator.uniform(
-                        low=self.max_angle,
-                        high=angle_odd - self.angle_difference_between_user
-                    )
+                    low = self.max_angle
+                    high = angle_odd - self.angle_difference_between_user
+                    # Ensure valid range
+                    if high <= low:
+                        high = low + self.angle_difference_between_user
+                    angle_odd = self.numpy_generator.uniform(low=low, high=high)
                 else:
                     # Other odd indices
-                    angle_odd = self.numpy_generator.uniform(
-                        low=angle_odd - 2 * self.angle_difference_between_user,
-                        high=angle_odd - self.angle_difference_between_user
-                    )
+                    low = angle_odd - 2 * self.angle_difference_between_user
+                    high = angle_odd - self.angle_difference_between_user
+                    # Ensure valid range
+                    if high <= low:
+                        high = low + self.angle_difference_between_user
+                    angle_odd = self.numpy_generator.uniform(low=low, high=high)
                 angles.append(angle_odd)
         
         return angles
@@ -241,38 +288,66 @@ class PositionGenerator:
         
         #print(f"one angle is {angle},angle max is {self.max_angle}, angle intermediate is {self._intermediate_angle_toward_min, self._intermediate_angle_toward_max}")
 
-        if self._intermediate_angle_toward_min > angle > self._intermediate_angle_toward_max:
+        try:
+            if self._intermediate_angle_toward_min > angle > self._intermediate_angle_toward_max:
+                
+                r_distance_min =  (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle)
+                r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
+                
+            elif angle <= self._intermediate_angle_toward_max:
+                r_distance_min = (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle) 
+                r_distance_max = (self.RIS_position[1] - self.grid_limits[1, 0] ) / np.sin(-angle) 
+                
+            elif  angle >= self._intermediate_angle_toward_min and not self.y_axis_upper_limit_aligned:
+
+                r_distance_min =  (self.grid_limits[1][1] - self.RIS_position[1] ) / np.sin(-angle)
+                r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
+                
+
+            elif angle >= self._intermediate_angle_toward_min and self.y_axis_upper_limit_aligned:
+                
+                r_distance_min =  (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle)
+                r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
             
-            r_distance_min =  (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle)
-            r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
+            # Ensure valid range for sampling
+            if r_distance_max <= r_distance_min or np.isnan(r_distance_min) or np.isnan(r_distance_max):
+                # If range is invalid, use a fallback approach
+                return self._fallback_position_generation()
+            
+            # Ensure the range is reasonable (not too small or too large)
+            if r_distance_max - r_distance_min < 0.1:
+                return self._fallback_position_generation()
             
             sampled_distance = self.numpy_generator.uniform(low=r_distance_min, high=r_distance_max)
 
-        elif angle <= self._intermediate_angle_toward_max:
-            r_distance_min = (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle) 
-
-            r_distance_max = (self.RIS_position[1] - self.grid_limits[1, 0] ) / np.sin(-angle) 
+            position = np.array([
+                self.RIS_position[0] + sampled_distance * np.cos(angle),
+                self.RIS_position[1] + sampled_distance * np.sin(angle)
+            ])
             
-        elif  angle >= self._intermediate_angle_toward_min and not self.y_axis_upper_limit_aligned:
-
-            r_distance_min =  (self.grid_limits[1][1] - self.RIS_position[1] ) / np.sin(-angle)
-            r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
-            
-
-        elif angle >= self._intermediate_angle_toward_min and self.y_axis_upper_limit_aligned:
-            
-            r_distance_min =  (self.grid_limits[0][0] - self.RIS_position[0] ) / np.cos(angle)
-            r_distance_max = (self.grid_limits[0][1]- self.RIS_position[0] ) / np.cos(angle)
-        
-        sampled_distance = self.numpy_generator.uniform(low=r_distance_min, high=r_distance_max)
-
-        position = np.array([
-            self.RIS_position[0] + sampled_distance * np.cos(angle),
-            self.RIS_position[1] + sampled_distance * np.sin(angle)
-        ])
-        
-        return position
+            # Validate that the position is within bounds
+            if (self.grid_limits[0][0] <= position[0] <= self.grid_limits[0][1] and 
+                self.grid_limits[1][0] <= position[1] <= self.grid_limits[1][1]):
+                return position
+            else:
+                return self._fallback_position_generation()
+                
+        except Exception as e:
+            # If any error occurs, use fallback
+            return self._fallback_position_generation()
     
+    def _fallback_position_generation(self):
+        """Fallback method to generate a position when angle-based generation fails."""
+        try:
+            # Use the random point generation as fallback
+            position = self.random_point_in_area()
+            return np.array(position)
+        except:
+            # Last resort: return grid center
+            return np.array([
+                (self.grid_limits[0][0] + self.grid_limits[0][1]) * 0.5,
+                (self.grid_limits[1][0] + self.grid_limits[1][1]) * 0.5
+            ])
     
     def generate_new_eavesdroppers_positions(self, users_positions):
         """
@@ -324,6 +399,13 @@ class PositionGenerator:
                     np.all(dist_sq >= min_dist_sq, axis=1) & 
                     (min_dist_sq_per_candidate <= max_dist_sq)
                 )
+                
+                # Additional check for minimum distance between eavesdroppers
+                if i > 0:
+                    eavesdropper_dist_sq = np.sum((candidates[:, np.newaxis] - eavesdropper_positions[:i]) ** 2, axis=2)
+                    min_eavesdropper_dist_sq = self.min_distance ** 2
+                    eavesdropper_valid_mask = np.all(eavesdropper_dist_sq >= min_eavesdropper_dist_sq, axis=1)
+                    valid_mask = valid_mask & eavesdropper_valid_mask
                 
                 if np.any(valid_mask):
                     # Take first valid candidate
@@ -393,6 +475,12 @@ class PositionGenerator:
         x_min, x_max = self.grid_limits[0]
         y_min, y_max = self.grid_limits[1]
 
+        # Ensure valid ranges
+        if x_max <= x_min:
+            x_max = x_min + 1.0
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+
         x = self.numpy_generator.uniform(x_min, x_max)
         y = self.numpy_generator.uniform(y_min, y_max)
 
@@ -409,52 +497,147 @@ class PositionGenerator:
         
         Returns
         -------
-        tuple
-            A tuple containing two lists:
-            - users_position: A list of self.num_users tuples, each representing the (x, y) coordinates of a user's position.
+        np.ndarray
+            Array of shape (self.num_users, 2) containing user positions.
         """
         def generate_unique_positions(count, existing_positions):
-            positions = set()
-            while len(positions) < count:
-                position = self.random_point_in_area()
-                if position not in existing_positions and position not in positions:
-                    positions.add(position)
-            return list(positions)
+            positions = []
+            attempts = 0
+            max_attempts = 10000
+            
+            while len(positions) < count and attempts < max_attempts:
+                try:
+                    position = self.random_point_in_area()
+                    position_array = np.array(position)
+                    
+                    # Check minimum distance from existing positions
+                    if len(positions) == 0 or self._check_minimum_distance(position_array, np.array(positions)):
+                        positions.append(position)
+                    
+                    attempts += 1
+                except Exception as e:
+                    # If there's an error, try to generate a simple position
+                    try:
+                        x_min, x_max = self.grid_limits[0]
+                        y_min, y_max = self.grid_limits[1]
+                        
+                        # Ensure valid ranges
+                        if x_max <= x_min:
+                            x_max = x_min + 1.0
+                        if y_max <= y_min:
+                            y_max = y_min + 1.0
+                            
+                        x = self.numpy_generator.uniform(x_min, x_max)
+                        y = self.numpy_generator.uniform(y_min, y_max)
+                        position = (round(x, 1), round(y, 1))
+                        position_array = np.array(position)
+                        
+                        if len(positions) == 0 or self._check_minimum_distance(position_array, np.array(positions)):
+                            positions.append(position)
+                    except:
+                        # Last resort: use grid center
+                        grid_center = np.array([(self.grid_limits[0][0] + self.grid_limits[0][1]) * 0.5,
+                                               (self.grid_limits[1][0] + self.grid_limits[1][1]) * 0.5])
+                        position = (round(grid_center[0], 1), round(grid_center[1], 1))
+                        positions.append(position)
+                    
+                    attempts += 1
+            
+            if len(positions) < count:
+                # Fallback: generate remaining positions without distance constraint
+                while len(positions) < count:
+                    try:
+                        position = self.random_point_in_area()
+                        if position not in existing_positions and position not in positions:
+                            positions.append(position)
+                    except:
+                        # Generate simple position as fallback
+                        x_min, x_max = self.grid_limits[0]
+                        y_min, y_max = self.grid_limits[1]
+                        
+                        if x_max <= x_min:
+                            x_max = x_min + 1.0
+                        if y_max <= y_min:
+                            y_max = y_min + 1.0
+                            
+                        x = self.numpy_generator.uniform(x_min, x_max)
+                        y = self.numpy_generator.uniform(y_min, y_max)
+                        position = (round(x, 1), round(y, 1))
+                        positions.append(position)
+            
+            return positions
 
         # Generate random positions for self.num_users users
         users_position = np.array(generate_unique_positions(self.num_users, set()))
 
         return users_position
 
-    def generate_random_eavesdroppers_positions(self):
+    def generate_random_eavesdroppers_positions(self, existing_positions=None):
         """
         Generates random positions for self.num_eavesdroppers users within their respective limits.
 
         Parameters
         ----------
-        self.num_eavesdroppers : int
-            The number of eavesdroppers for which to generate random positions.
+        existing_positions : np.ndarray, optional
+            Array of shape (n, 2) containing existing positions to avoid.
         
         Returns
         -------
-        tuple
-            A tuple containing two lists:
-            - eavesdroppers_position: A list of self.num_eavesdroppers tuples, each representing the (x, y) coordinates of an eavesdropper's position.
+        np.ndarray
+            Array of shape (self.num_eavesdroppers, 2) containing eavesdropper positions.
         """
+        if existing_positions is None:
+            existing_positions = np.empty((0, 2))
+        
         def generate_unique_positions(count, existing_positions):
-            positions = set()
-            while len(positions) < count:
+            positions = []
+            attempts = 0
+            max_attempts = 10000
+            
+            while len(positions) < count and attempts < max_attempts:
                 position = self.random_point_in_area()
-                if position not in existing_positions and position not in positions:
-                    positions.add(position)
-            return list(positions)
+                position_array = np.array(position)
+                
+                # Check minimum distance from existing positions and previously generated positions
+                all_existing = np.vstack([existing_positions, np.array(positions)]) if len(positions) > 0 else existing_positions
+                
+                if len(all_existing) == 0 or self._check_minimum_distance(position_array, all_existing):
+                    positions.append(position)
+                
+                attempts += 1
+            
+            if len(positions) < count:
+                # Fallback: generate remaining positions without distance constraint
+                while len(positions) < count:
+                    position = self.random_point_in_area()
+                    if position not in [tuple(p) for p in existing_positions] and position not in positions:
+                        positions.append(position)
+            
+            return positions
 
         # Generate random positions for self.num_eavesdroppers eavesdroppers
-        eavesdroppers_positions = np.array(generate_unique_positions(self.num_eavesdroppers, set()))
+        eavesdroppers_positions = np.array(generate_unique_positions(self.num_eavesdroppers, existing_positions))
 
         return eavesdroppers_positions
 
-
-
-
-
+    def _check_minimum_distance(self, position, existing_positions):
+        """
+        Check if a position maintains minimum distance from existing positions.
+        
+        Parameters
+        ----------
+        position : np.ndarray
+            Position to check (shape: (2,))
+        existing_positions : np.ndarray
+            Array of existing positions (shape: (n, 2))
+        
+        Returns
+        -------
+        bool
+            True if position maintains minimum distance, False otherwise
+        """
+        if len(existing_positions) == 0:
+            return True
+        
+        distances = np.sqrt(np.sum((existing_positions - position) ** 2, axis=1))
+        return np.all(distances >= self.min_distance)

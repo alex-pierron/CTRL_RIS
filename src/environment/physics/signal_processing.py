@@ -21,8 +21,7 @@ import numpy as np
 
 def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: np.ndarray, 
                           W_h_t: int, W_h_r: int,
-                          d_h_tx: float, d_h_rx: float,
-                          alpha: float, lambda_h: float, epsilon_h: float,
+                          d_h_tx: float, d_h_rx: float, lambda_h: float, epsilon_h: float,
                           numpy_generator : np.random._generator.Generator,
                           loop_channel_mode: bool = False, bjornson = False, nlos_only = False, los_only = False,
                           ):
@@ -38,7 +37,6 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         W_h_r (int): Number of elements in the ULA at the receiver.
         d_h_tx (float): Inter-element spacing in the ULA at the transmitter.
         d_h_rx (float): Inter-element spacing in the ULA at the receiver.
-        alpha (float): path loss exponent
         lambda_h (float): Carrier wavelength.
         epsilon_h (float): Rician factor (ratio of power between LoS and NLoS components).
         numpy_generator (numpy.random._generator.Generator): generator used to draw new random values with numpy.
@@ -49,17 +47,10 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
     if not loop_channel_mode:
         diff = receiver_position - transmitter_position
         distance = np.linalg.norm(diff) + 1e-12  # Avoid division by zero
-        
-        #? First formula tested, coming from Peng 2022 and incomplete on the details provided in the paper
-        """alpha_h = -30 - 10 * alpha * np.log10(distance/1)
-        alpha_h_linear = 10 ** (alpha_h / 10) """
 
         if bjornson:
-            #A_m = (lambda_h/4)**2
-            #beta = ( (lambda_h**2) /  ((4 * np.pi) **2)  )  / (distance**2)
             beta = ( (lambda_h**2) /  ((4 * np.pi) **2)  )  / (distance**2)
-            #print(f"typical beta value is {beta}, beta_2 is {beta_2}, sqrt of beta is {np.sqrt(beta)}")
-            #? Testing the formula from Bjornson & Demir (2024), page 252. The book is well explained and detailed
+            #? Using the formula from Bjornson & Demir (2024), page 252. The book is well explained and detailed
         else:
             beta = 1
         
@@ -75,7 +66,6 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         else:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            # h = np.sqrt(alpha_h_linear) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? First formula tested, coming from Peng 2022 
             return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
         # * Combine LoS and NLoS components to form the Rician fading channel
@@ -110,7 +100,6 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         else:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            # h = np.sqrt(alpha_h_linear) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? First formula tested, coming from Peng 2022 
             return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
 
@@ -142,9 +131,7 @@ def array_response(W_h: int, theta: float, d_h: float, lambda_h: float):
         np.ndarray: Array response vector.
     """
     indices = np.arange(W_h)
-
-    # return np.exp(1j * 2 * np.pi * d_h / lambda_h * indices * np.sin(theta)).reshape(-1, 1) # ? Array response provided in Peng 2022
-
+    
     return np.exp(-1j * 2 * np.pi * d_h / lambda_h * indices * np.sin(theta)).reshape(-1, 1) # ? Array response provided in Bjornson & Demir (2024), pages 227 & 253 
 
 
@@ -178,7 +165,6 @@ def computing_LoS_2D(transmitter_position: np.ndarray, receiver_position: np.nda
     a_h_t = array_response(W_h_t, theta_h_AOD, d_h_tx, lambda_h)  # Transmitter array response
 
     # Compute the LoS channel component as outer product of array responses
-    # h_bar = a_h_r @ a_h_t.conj().T # ? Array response provided in Peng 2022: uses the conjugate
     h_bar = a_h_r @ a_h_t.T # ? Array response provided in Bjornson & Demir (2024), pages 227 & 253; do not use the conjugate
     return h_bar
 
@@ -205,73 +191,94 @@ def computing_NLoS(W_h_t: int, W_h_r: int, numpy_generator : np.random._generato
 # ?  ----------------------------------------------     FUNCTIONS TO COMPUTE THE GAMMA TERMS FOR SINR CALCULATION    --------------------------------------------------------------
 
 
-def Gamma_B_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
+def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
               gains_transmitter_ris_receiver,
               H_BS_RIS, H_RIS_Users, kappa_S_d,
-              H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared):
+              H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared,
+              use_inter_user_interferences: bool = True):
     """Vectorized version of Gamma_B_k function."""
     K = W.shape[1]
     
     # Calculate all indices except k
     indices_except_k = np.arange(K)[np.arange(K) != k]
     
-    # First term: Inter-user interference
-    inter_user_interference_term = 0
-    for indice in indices_except_k:
-        #inter_user_interference_term += np.abs(H_RIS_Users[k].conj() @ Theta_Phi @ H_BS_RIS @ W[:, indice])**2
-        pass
-        inter_user_interference_term += np.abs(np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W[:, indice].reshape(-1, 1))**2
+    # First term: Inter-user interference - VECTORIZED
+    if len(indices_except_k) > 0 and use_inter_user_interferences:
+        # Vectorized computation for all interfering users at once
+        W_except_k = W[:, indices_except_k]  # Shape: (N_t, K-1)
+        interference_matrix = np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W_except_k
+        inter_user_interference_term = np.sum(np.abs(interference_matrix)**2)
+    else:
+        inter_user_interference_term = 0
 
-    # Third term: User-induced interference
+    # Third term: User-induced interference - VECTORIZED
     # For all users except k
-    user_interference_not_k = 0
-    for indice in indices_except_k:
-        #user_channel = H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[indice]
-        user_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS[indice]
-        user_interference_not_k += (1 + kappa_B_u_i) * rho * P_users[indice] * np.abs(user_channel)**2
-    
+    if len(indices_except_k) > 0:
+        # Vectorized computation for user interference
+        H_Users_RIS_except_k = H_Users_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+        P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+        
+        # Compute all user channels at once - FIXED DIMENSIONS
+        # H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T
+        # H_Users_RIS[k].T: (1, M), Theta_Phi: (M, M), H_Users_RIS_except_k.squeeze(axis=2).T: (M, K-1)
+        user_channels = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+        user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
+    else:
+        user_interference_not_k = 0
+
     # For user k
     user_k_channel = np.sqrt(gains_transmitter_ris_receiver[k]) * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
     user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
     
     # Total user interference
-    user_interference_term = user_interference_not_k  + user_interference_k 
+    user_interference_term = user_interference_not_k + user_interference_k 
 
     # Second term: Distortion noise caused by BS
     diag_matrix = np.diag(np.diag(WWH)).real
-    distortion_term = 0 # (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].T  * np.sqrt(gains_transmitter_ris_receiver[k]) ).real
+    distortion_term = 0
+    #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
     #distortion_term = (kappa_S_d * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
     
     # Noise term
     sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
     
-    #return np.squeeze(inter_user_interference_term + user_interference_term + sigma_noise_term)
-    
     return np.squeeze(inter_user_interference_term + distortion_term + user_interference_term + sigma_noise_term)
 
 
 
-def Gamma_S_k(K, k, Theta_Phi,
+def Gamma_Uplink_k(K, k, Theta_Phi,
               gains_transmitter_ris_receiver,
-              H_User_RIS, H_RIS_BS, f_u_k, P_users, kappa_B_u_i, delta_k_squared):
-    """Computation of Gamma_S_k as per Peng 2022, Eq. (15)."""
+              H_User_RIS, H_RIS_BS, f_u_k, P_users, kappa_B_u_i, delta_k_squared,
+              use_inter_user_interferences: bool = True):
+    """Computation of Gamma_Downlink_k as per Peng 2022, Eq. (15)."""
     
     # Projected signal for all users through RIS and combining vector
     indices_except_k = np.arange(K)[np.arange(K) != k]
 
-    # First term: interference from other users (i ≠ k)
-    interference_other_user = 0
-    for indice in indices_except_k:
-        interference_other_user += np.squeeze(P_users[indice] * np.absolute(np.sqrt(gains_transmitter_ris_receiver[indice]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[indice]) ** 2) # inter user interference term
-        # ? removing the .conj() in the first f_u_k above and in H_RIS_BS
+    # First term: interference from other users (i ≠ k) - VECTORIZED
+    if len(indices_except_k) > 0 and use_inter_user_interferences:
+        # Vectorized computation for all interfering users
+        H_User_RIS_except_k = H_User_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+        P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+        gains_except_k = gains_transmitter_ris_receiver[indices_except_k]  # Shape: (K-1,)
+        
+        # Compute all interference terms at once - FIXED DIMENSIONS
+        # f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS_except_k.squeeze(axis=2).T
+        # f_u_k.T: (1, N_r), H_RIS_BS: (N_r, M), Theta_Phi: (M, M), H_User_RIS_except_k.squeeze(axis=2).T: (M, K-1)
+        channel_products = f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+        interference_terms = P_users_except_k * np.abs(np.sqrt(gains_except_k) * channel_products)**2
+        interference_other_user = np.sum(interference_terms)
+    else:
+        interference_other_user = 0
+        
     # Second term: distortion noise caused by all users
     # TODO add support for specific kappa_B_u_i for each user i. Currently same value is used for everyone.
-    distortion_noise = 0 #kappa_B_u_i * ( interference_other_user + np.squeeze(P_users[k] * np.absolute(np.sqrt(gains_transmitter_ris_receiver[k]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[k]) ** 2) )
+    user_k_signal = np.squeeze(P_users[k] * np.abs(np.sqrt(gains_transmitter_ris_receiver[k]) * f_u_k.T @ H_RIS_BS @ Theta_Phi @ H_User_RIS[k])**2)
+    distortion_noise = kappa_B_u_i * (interference_other_user + user_k_signal)
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
     # ? removing the .conj() in the first f_u_k above and in H_RIS_BS
 
-    
     # Third term: noise power scaled by combining vector norm
     third_term = np.linalg.norm(f_u_k)**2 * 1.1 * delta_k_squared #TODO: what values for delta_k_squared
 
@@ -316,7 +323,7 @@ def Gamma_E_d_k_l(k: int, l: int, W: np.ndarray, Theta_Phi: np.ndarray, Phi_H_Th
     
     # Fourth term: distortion noise caused by BS
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
-    fourth_term = 0  # (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[K +l]) * H_RIS_Eaves_downlink[l].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix_WWH @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Eaves_downlink[l].T * np.sqrt(gains_transmitter_ris_receiver[K +l])).real
+    fourth_term = (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[K +l]) * H_RIS_Eaves_downlink[l].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix_WWH @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Eaves_downlink[l].T * np.sqrt(gains_transmitter_ris_receiver[K +l])).real
     
     # Noise term
     mu_noise_term = 1.1 * mu_d_l_squared
@@ -359,7 +366,7 @@ def Gamma_E_u_k_l(k, l, W, Theta_Phi, Phi_H_Theta_H,
     
     # Fourth term: distortion noise caused by BS
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
-    fourth_term = 0 # (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[K+l]) * H_RIS_Eaves_downlink[l].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix_WWH @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Eaves_downlink[l].T * np.sqrt(gains_transmitter_ris_receiver[K+l])).real
+    fourth_term = (kappa_S_d * np.sqrt(gains_transmitter_ris_receiver[K+l]) * H_RIS_Eaves_downlink[l].conj() @ Theta_Phi @ H_BS_RIS @ diag_matrix_WWH @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Eaves_downlink[l].T * np.sqrt(gains_transmitter_ris_receiver[K+l])).real
     
     # Final result
     result = np.squeeze(first_term + second_term + third_term + fourth_term)

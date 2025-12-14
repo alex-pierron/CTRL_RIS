@@ -273,13 +273,6 @@ If you use CTRL_RIS in your research, please cite our work using one of the foll
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Research Community**: For advancing AI fairness in wireless communications
-- **Open Source**: Built on excellent open-source RL frameworks
-- **Contributors**: All community members who help improve this project
-
----
 
 <div align="center">
 

@@ -111,11 +111,12 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
     env_config = training_envs.env_config
 
+    n_rollout_envs = training_envs.nenvs
+    
     # Extract training configuration parameters
     debugging = training_config.get("debugging", False)
     num_episode = training_config.get("number_episodes", 15)
     max_num_step_per_episode = training_config.get("max_steps_per_episode", 20000)
-    batch_size = training_config.get("batch_size", 128)
     frequency_information = training_config.get("frequency_information", 500)
     conduct_eval = eval_env is not None
     episode_per_eval = training_config.get("episode_per_eval_env", 1) if conduct_eval else None
@@ -125,11 +126,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
     num_users = env_config
     saving_frequency = training_config.get("network_save_checkpoint_frequency", 100)
+
+    ppo_epochs = network.ppo_epochs
     n_eval_rollout_threads = training_config.get("n_eval_rollout_threads", 2)
     
     # NOTE: For PPO, we use rollout buffer instead of replay buffer
     rollout_size = getattr(network.rollout, 'buffer_size', training_config.get('rollout_size', 2048))
-    buffer_size = rollout_size  # Use rollout size for compatibility with existing code
+    buffer_size = rollout_size * n_rollout_envs # Use rollout size for compatibility with existing code
     
     decisive_reward_functions = env_config.get("decisive_reward_functions", ["basic_reward"])
     informative_reward_functions = env_config.get("informative_reward_functions", [])
@@ -139,7 +142,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     decisive_rewards_average_episode = {function_name: np.zeros(num_episode) for function_name in decisive_reward_functions}
     informative_rewards_average_episode = {function_name: np.zeros(num_episode) for function_name in informative_reward_functions}
 
-    n_rollout_envs = training_envs.nenvs
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
 
@@ -164,6 +166,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     best_average_reward = 0
     optim_steps = 0
     
+    optim_steps_per_ep = int(ppo_epochs * ( max_num_step_per_episode // (rollout_size//n_rollout_envs) ) )
+    
     if not using_eavesdropper:
         eavesdroppers_positions = None
     
@@ -173,21 +177,23 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     avg_user_fairness_all_episode_general = np.zeros(num_episode)
 
     #TODO: optimize this code snippet:  managing the tqdm buffer bar, can be optimized
-    buffer_bar_finished = False
     buffer_number_of_required_episode = buffer_size//(n_rollout_envs *max_num_step_per_episode)
-    buffer_smaller_than_one_episode = (buffer_size//(n_rollout_envs *max_num_step_per_episode) < 1)
-    length_episode_rb_matching = ( (buffer_size % (n_rollout_envs *max_num_step_per_episode)) == 0)
+    
     
     if buffer_number_of_required_episode == 0:
         buffer_number_of_required_episode = 1
-    
-    # NOTE: Progress bar for initial rollout buffer warmup
-    filling_buffer_progress_bar = tqdm(total=buffer_number_of_required_episode, desc="FILLING ROLLOUT BUFFER", position=0, ascii="->#", leave=True) if not batch_instead_of_buff else None
-    
 
     # === Main training loop over episodes ===
-    for episode in tqdm(range(num_episode), desc="TRAINING", position=1, ascii="->#"):
+    for episode in tqdm(range(num_episode), 
+                       desc="[TRAIN] TRAINING", 
+                       position=1, 
+                       bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                       ncols=140,
+                       colour='magenta',
+                       ascii="▏▎▍▌▋▊▉█"):
         
+        current_optim_steps_ep = 0
+
         if curriculum_learning:
             difficulty_config = Task_Manager.generate_episode_configs()
             # print(difficulty_config)
@@ -229,30 +235,40 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             else:
                 states = next_states
 
+            # OPTIMIZED: Use batch action selection for better performance
             # NOTE: PPO explores by sampling from the policy (no noise needed)
-            selected_actions = []
-            raw_actions = []
-            logprobs = []
-            
-            for i in range(n_rollout_envs):
-                action, logprob, raw_action = network.select_action(states[i], eval_mode=False)
-                selected_actions.append(action)
-                raw_actions.append(raw_action)
-                logprobs.append(logprob)
-            
-            selected_actions = torch.stack(selected_actions)
-            raw_actions = torch.stack(raw_actions)
-            logprobs = torch.stack(logprobs)
+            if hasattr(network, 'select_actions_batch'):
+                # OPTIMIZED: Batch process all environments at once
+                selected_actions, logprobs, raw_actions = network.select_actions_batch(states, eval_mode=False)
+                selected_actions = selected_actions  # Already a tensor
+                raw_actions = raw_actions  # Already a tensor
+                logprobs = logprobs  # Already a tensor
+            else:
+                # Fallback to individual selection (slower but compatible)
+                selected_actions = []
+                raw_actions = []
+                logprobs = []
+                
+                for i in range(n_rollout_envs):
+                    action, logprob, raw_action = network.select_action(states[i], eval_mode=False)
+                    selected_actions.append(action)
+                    raw_actions.append(raw_action)
+                    logprobs.append(logprob)
+                
+                selected_actions = torch.stack(selected_actions)
+                raw_actions = torch.stack(raw_actions)
+                logprobs = torch.stack(logprobs)
             
             states, selected_actions, rewards, next_states = training_envs.step(states, selected_actions)
 
-            # Reshaping the rewards
+            # OPTIMIZED: Reshape rewards once and reuse
             instant_user_rewards[:, num_step] = rewards
             total_reward += rewards
-            rewards = rewards.reshape((n_rollout_envs, 1))
+            rewards_reshaped = rewards.reshape((n_rollout_envs, 1))
             max_instant_reward = max(max_instant_reward, rewards.max().item())
 
-            basic_reward_episode[num_step,:] = training_envs.get_basic_reward().reshape((n_rollout_envs))
+            # OPTIMIZED: Cache basic reward call result
+            basic_reward_episode[num_step, :] = training_envs.get_basic_reward().reshape((n_rollout_envs))
 
             decisive_rewards = pickable_to_dict(training_envs.get_decisive_rewards())
             informative_rewards = pickable_to_dict(training_envs.get_informative_rewards())
@@ -263,15 +279,20 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             for function_name in informative_reward_functions:
                 informative_rewards_current_episode[function_name][:, num_step] = [informative_rewards[env_idx][function_name]['total_reward'] for env_idx in informative_rewards]
 
-            
-            rewards = rewards.reshape((n_rollout_envs, 1))
+            # OPTIMIZED: Reuse already reshaped rewards
+            rewards = rewards_reshaped
 
+            # OPTIMIZED: Cache done flag check (usually same for all envs in vectorized setup)
+            done_flag = bool(training_envs.is_done()) if hasattr(training_envs, 'is_done') else False
+            
             # NOTE: Store transitions for all envs in PPO rollout buffer
             for i in range(n_rollout_envs):
-                done = bool(training_envs.is_done()) if hasattr(training_envs, 'is_done') else False
-                network.store_transition(states[i], selected_actions[i], raw_actions[i], 
-                                       float(rewards[i]), next_states[i], done=done, 
-                                       logprob=logprobs[i])
+                success = network.store_transition(states[i], selected_actions[i], raw_actions[i], 
+                                       float(rewards[i]), next_states[i], done=done_flag, 
+                                       logprob=logprobs[i], env_id=i)
+                if not success:
+                    # Buffer is full, break out of the loop
+                    break
 
             # Update max reward in a single operation
             current_fairness = np.round(training_envs.get_jain_fairness(), decimals=4).squeeze()
@@ -291,33 +312,32 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 training_time_1 = time.time()
                 actor_loss, critic_loss, mean_reward = network.training()
                 step_time_list.append(time.time() - training_time_1)
-                optim_steps += 1
-                
+                current_optim_steps_ep += ppo_epochs
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
                 
                 # Reset rollout buffer after training
-                try:
-                    network.rollout.reset()
-                except Exception:
-                    if hasattr(network.rollout, 'ptr'):
-                        network.rollout.ptr = 0
+                network.rollout.reset()
                 # NOTE: Periodic logging of buffer stats, losses, and fairness
                 if (current_step + 1) % frequency_information == 0 and (num_step +1) % frequency_information == 0:
 
-                    current_avg_actor_loss = avg_actor_loss / num_step
-                    current_avg_critic_loss = avg_critic_loss / num_step
+                    current_avg_actor_loss = avg_actor_loss / current_optim_steps_ep
+                    current_avg_critic_loss = avg_critic_loss / current_optim_steps_ep
                     writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                     writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
 
+                    # OPTIMIZED: Pre-compute slice indices once
                     # Local items (average and so on) represent the items for the current slice between last frequency information and the new one.
-                    local_average_reward = np.mean(instant_user_rewards[:, num_step + 1 - frequency_information: num_step])
+                    freq_start = num_step + 1 - frequency_information
+                    freq_end = num_step
+                    
+                    local_average_reward = np.mean(instant_user_rewards[:, freq_start: freq_end])
 
-                    local_average_reward_per_env = np.mean(instant_user_rewards[:, num_step + 1 - frequency_information: num_step],axis=1)
+                    local_average_reward_per_env = np.mean(instant_user_rewards[:, freq_start: freq_end], axis=1)
 
-                    user_fairness_mean_local = np.round(np.mean(instant_user_jain_fairness[num_step + 1 - frequency_information: num_step]), decimals=3)
+                    user_fairness_mean_local = np.round(np.mean(instant_user_jain_fairness[freq_start: freq_end]), decimals=3)
 
-                    user_fairness_mean_local_per_env = np.round(np.mean(instant_user_jain_fairness[num_step + 1 - frequency_information: num_step], axis=0), decimals=3)
+                    user_fairness_mean_local_per_env = np.round(np.mean(instant_user_jain_fairness[freq_start: freq_end], axis=0), decimals=3)
 
                     writer.add_scalar("Rewards/Average local reward", local_average_reward, current_step)
                     writer.add_scalar("Rewards/Average global reward", np.mean(total_reward) / (num_step + 1), current_step)
@@ -329,10 +349,11 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
                     
                     if using_eavesdropper:
-                        local_average_eavesdropper_reward = np.mean(instant_eavesdropper_rewards[:, num_step + 1 - frequency_information: num_step])
+                        # OPTIMIZED: Reuse pre-computed slice indices
+                        local_average_eavesdropper_reward = np.mean(instant_eavesdropper_rewards[:, freq_start: freq_end])
 
                         writer.add_scalar("Eavesdropper/Local average reward", local_average_eavesdropper_reward, current_step)
-                        writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[:, num_step + 1 - frequency_information: num_step], current_step)
+                        writer.add_histogram("Eavesdropper/Instant reward", instant_eavesdropper_rewards[:, freq_start: freq_end], current_step)
                     
                     message = (
                         f"\n"
@@ -356,22 +377,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     
                     logger.verbose(message)
 
-        #TODO: optimize this code snippet: Correctly handling the number management of the rollout buffer loading bar for the tqdm.
-        if batch_instead_of_buff:
-            pass
-        elif buffer_filled or buffer_bar_finished:
-            if buffer_smaller_than_one_episode:
-                filling_buffer_progress_bar.update(1)
-                if filling_buffer_progress_bar.n == buffer_number_of_required_episode:
-                    buffer_bar_finished = True
-            elif length_episode_rb_matching and filling_buffer_progress_bar.n == buffer_number_of_required_episode - 1:
-                filling_buffer_progress_bar.update(1)
-                buffer_bar_finished = True
-        else:
-            if not buffer_filled and not batch_instead_of_buff:
-                filling_buffer_progress_bar.update(1)
-                if filling_buffer_progress_bar.n == buffer_number_of_required_episode:
-                    buffer_bar_finished = True
 
         if curriculum_learning:
                 if using_eavesdropper:
@@ -382,9 +387,10 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     episodes_outcomes = Task_Manager.compute_episodes_outcome( downlink_sum = training_envs.get_downlink_sum_for_success_conditions() , uplink_sum = training_envs.get_uplink_sum_for_success_conditions())
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
 
-
-        avg_actor_loss /= max_num_step_per_episode
-        avg_critic_loss /= max_num_step_per_episode
+        optim_steps += optim_steps_per_ep
+            
+        avg_actor_loss /= optim_steps_per_ep
+        avg_critic_loss /= optim_steps_per_ep
         avg_reward = np.mean(total_reward) / max_num_step_per_episode
 
         avg_user_fairness_all_envs = np.mean(instant_user_jain_fairness)
@@ -422,34 +428,54 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         
         best_basic_reward_per_env = np.max(basic_reward_episode,axis=0)
 
-        message = (
+        # Create console message for episode summary (with emojis)
+        console_message = (
             f"\n\n"
-            f"====================================================================================================\n"
-            f"| TRAINING EPISODE N° {episode - index_episode_buffer_filled} | Optimization Steps Performed: {optim_steps} |\n"
-            f"====================================================================================================\n"
-            f"| POSITIONING: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Positions of UEs for Each Subprocess: {user_positions}\n"
-            f"| \n"
-            f"| REWARDS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average Reward: {avg_reward:.4f} | Max Instant Reward: {np.max(instant_user_rewards):.4f} |\n"
-            f"| Best Reward Obtained per Subprocess: {episode_max_instant_reward_reached_per_env}\n"
-            f"| --> Average Basic Reward: {average_basic_reward_all_envs:.4f} | Basic Reward for Maximum Instant Reward: {basic_reward_for_best_env:.4f} |\n"
-            f"| Best Basic Reward Obtained per Subprocess: {best_basic_reward_per_env}\n"
-            f"| \n"
-            f"| FAIRNESS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| --> Average User Fairness: {avg_user_fairness_all_envs:.4f} | User Fairness for Maximum Instant Reward: {fairness_for_best_reward:.4f} |\n"
-            f"| \n"
-            f"| OTHERS: \n"
-            f"|----------------------------------------------------------------------------------------------------\n"
-            f"| Average Actor Loss: {avg_actor_loss:.4f} | Average Critic Loss: {avg_critic_loss:.4f} |\n"
-            f"====================================================================================================\n"
+            f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+            f"║ 🎯 ON-POLICY TRAINING EPISODE #{episode - index_episode_buffer_filled:3d} │ 🧠 Optimizations: {optim_steps:4d} ║\n"
+            f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
+            f"║ 📍 POSITIONING:\n"
+            f"║    User Equipment Positions: {user_positions}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 🏆 REWARDS:\n"
+            f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"║    • Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"║    • Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} │ Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"║    • Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ ⚖️  FAIRNESS:\n"
+            f"║    • Average Fairness: {avg_user_fairness_all_envs:8.4f} │ Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            f"║ 📊 PERFORMANCE:\n"
+            f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
+        # Create ASCII version for file logging
+        log_message = (
+            f"\n+====================================================================================================+\n"
+            f"| [TRAIN] ON-POLICY EPISODE #{episode - index_episode_buffer_filled:3d} | Optimizations: {optim_steps:4d} |\n"
+            f"+====================================================================================================+\n"
+            f"| POSITIONING:\n"
+            f"|    User Equipment Positions: {user_positions}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| REWARDS:\n"
+            f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {np.max(instant_user_rewards):8.4f}\n"
+            f"|    * Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
+            f"|    * Baseline Reward Avg: {average_basic_reward_all_envs:8.4f} | Best Baseline: {basic_reward_for_best_env:8.4f}\n"
+            f"|    * Best Baseline per Env: {best_basic_reward_per_env}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| FAIRNESS:\n"
+            f"|    * Average Fairness: {avg_user_fairness_all_envs:8.4f} | Best Reward Fairness: {fairness_for_best_reward:8.4f}\n"
+            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            f"| PERFORMANCE:\n"
+            f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
+            f"+====================================================================================================+\n"
+        )
 
-        logger.verbose(message)
+        # Display beautiful console message and log ASCII version to file
+        tqdm.write(console_message)
+        logger.verbose(log_message)
 
         writer.add_scalar("Actor Loss/Average actor Loss per episode", avg_actor_loss, episode)
         writer.add_scalar("Critic Loss/Average critic Loss per episode", avg_critic_loss, episode)
@@ -482,10 +508,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         if using_eavesdropper:
             avg_eavesdropper_reward = np.mean(instant_eavesdropper_rewards)
             writer.add_scalar("Eavesdropper/Average reward per episode", avg_eavesdropper_reward, episode)
-        
-        # Update the progress bar description with the last ending message
-        if buffer_filled:
-            tqdm.write(message)
 
     #*  CONDUCT EVALUATION IF SPECIFIED
 
@@ -521,7 +543,13 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
             # Loop over evaluation episodes
             # NOTE: Loop over evaluation episodes
-            for eval_episode in tqdm(range(episode_per_eval), desc="EVAL", position=2, ascii="->#"):
+            for eval_episode in tqdm(range(episode_per_eval), 
+                                   desc="[EVAL] EVALUATION", 
+                                   position=2, 
+                                   bar_format="{l_bar}{bar:50}{r_bar}{bar:-10b}",
+                                   ncols=140,
+                                   colour='red',
+                                   ascii="▏▎▍▌▋▊▉█"):
 
                 eval_env.reset()
 
@@ -550,12 +578,17 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     else:
                         states = next_states
                     
+                    # OPTIMIZED: Use batch action selection for evaluation if available
                     # NOTE: For PPO evaluation, use deterministic actions
-                    selected_actions = []
-                    for i in range(n_eval_rollout_threads):
-                        action, _, _ = network.select_action(states[i], eval_mode=True)
-                        selected_actions.append(action)
-                    selected_actions = torch.stack(selected_actions)
+                    if hasattr(network, 'select_actions_batch'):
+                        selected_actions, _, _ = network.select_actions_batch(states, eval_mode=True)
+                    else:
+                        # Fallback to individual selection
+                        selected_actions = []
+                        for i in range(n_eval_rollout_threads):
+                            action, _, _ = network.select_action(states[i], eval_mode=True)
+                            selected_actions.append(action)
+                        selected_actions = torch.stack(selected_actions)
                     states, selected_actions, rewards, next_states = eval_env.step(states, selected_actions)
 
                     """for i,r in enumerate(rewards):

@@ -32,14 +32,14 @@ class ActorNetwork(nn.Module):
         self.log_std_min = -10
         self.log_std_max = 2
         
-        self.batch_norm = nn.BatchNorm1d(action_dim)
+        # Note: Avoid BatchNorm on action outputs for SAC stability
 
     def actor_W_projection_operator(self, raw_W):
         """
         Projects a batch of beamforming matrices W onto the set defined by the power constraint.
         """
-        # Ensure float type
-        raw_W = raw_W.detach()
+        # Ensure float type while keeping gradients
+        #raw_W = raw_W.detach()
 
         # Frobenius norms for each matrix in the batch
         frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
@@ -83,7 +83,7 @@ class ActorNetwork(nn.Module):
         magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)
 
         # Avoid division by zero
-        magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
+        magnitudes = torch.where(magnitudes == 0, torch.ones_like(magnitudes), magnitudes)
         normalized_theta_real = theta_real / magnitudes
         normalized_theta_imag = theta_imag / magnitudes
 
@@ -112,8 +112,8 @@ class ActorNetwork(nn.Module):
         for layer in self.linear_layers:
             x = F.relu(layer(x))
         
-        # Get mean and log_std
-        mean = torch.tanh(self.mean_output(x))
+        # Get mean and log_std (no tanh on mean; tanh is applied to samples)
+        mean = self.mean_output(x)
         log_std = self.log_std_output(x)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         
@@ -130,7 +130,6 @@ class ActorNetwork(nn.Module):
         
         # Apply tanh and process actions
         raw_action = torch.tanh(x_t)
-        raw_action = self.batch_norm(raw_action)
         action = self.actor_process_raw_actions(raw_action)
         
         # Calculate log probability
@@ -143,8 +142,8 @@ class ActorNetwork(nn.Module):
     def get_action(self, state):
         """Get deterministic action for evaluation"""
         mean, _ = self.forward(state)
-        mean = self.batch_norm(mean)
-        action = self.actor_process_raw_actions(mean)
+        raw_action = torch.tanh(mean)
+        action = self.actor_process_raw_actions(raw_action)
         return action
 
     def forward_raw(self, x):
@@ -155,8 +154,8 @@ class ActorNetwork(nn.Module):
         for layer in self.linear_layers:
             x = F.relu(layer(x))
         x = torch.tanh(self.mean_output(x))
-        x = self.batch_norm(x)
         return x
+
 
 
 class CriticNetwork(nn.Module):
@@ -177,7 +176,6 @@ class CriticNetwork(nn.Module):
         x = self.output(x)  # No activation for output
         return x
     
-
 
 
 class SAC:
@@ -281,13 +279,11 @@ class SAC:
             
         self.actor = actor_model(state_dim=state_dim, action_dim=action_dim,
                                  actor_linear_layers=actor_linear_layers,
-                                N_t=self.N_t, K=self.K, P_max=self.P_max)
+                                N_t=self.N_t, K=self.K, P_max=self.P_max).to(self.device)
 
         # Two Q-networks for SAC
         self.critic1 = critic_model(state_dim, action_dim, critic_linear_layers=critic_linear_layers).to(self.device)
         self.critic2 = critic_model(state_dim, action_dim, critic_linear_layers=critic_linear_layers).to(self.device)
-        self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr)
-        self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr)
 
         # Target Q-networks
         self.target_critic1 = critic_model(state_dim, action_dim, critic_linear_layers=critic_linear_layers).to(self.device)
@@ -307,7 +303,7 @@ class SAC:
         }
         # ensure case-insensitivity
         optimizer_name = optimizer.lower()
-        self.actor_optimizer =  OPTIMIZERS[optimizer_name](self.actor.parameters(), lr=actor_lr )#, maximize = True)
+        self.actor_optimizer =  OPTIMIZERS[optimizer_name](self.actor.parameters(), lr=actor_lr )
         self.critic1_optimizer = OPTIMIZERS[optimizer_name](self.critic1.parameters(), lr=critic_lr)
         self.critic2_optimizer = OPTIMIZERS[optimizer_name](self.critic2.parameters(), lr=critic_lr)
 
@@ -336,7 +332,7 @@ class SAC:
                 beta_frames=per_beta_frames,
                 epsilon=per_epsilon
             )
-            print(f"Using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start}) \n")
+            print(f"\n SAC using Prioritized Experience Replay (alpha={per_alpha}, beta_start={per_beta_start}) ")
         else:
             # Assuming ReplayBuffer is your original implementation
             self.replay_buffer = ReplayBuffer(
@@ -345,41 +341,40 @@ class SAC:
                 action_dim=action_dim,
                 numpy_rng=self.network_numpy_rng
             )
-            print("Using standard Experience Replay")
+            print(f"\n SAC using Standard Experience Replay")
 
     def select_action(self, state, eval_mode=False):
         """
         Selects an action based on the current state using the actor network.
         """
-        if self.gpu_used:
-            self.actor.to("cpu")
         self.actor.eval()
         
-        state = torch.tensor(state, dtype=torch.float32, device='cpu').unsqueeze(0)
+        state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         
         if eval_mode:
             # Deterministic action for evaluation
-            action = self.actor.get_action(state)
+            with torch.no_grad():
+                action = self.actor.get_action(state)
         else:
             # Stochastic action for exploration
-            action, _, _ = self.actor.sample(state)
+            with torch.no_grad():
+                action, _, _ = self.actor.sample(state)
         
-        return action.detach().squeeze(0)
+        return action.detach().squeeze(0).to('cpu')
 
     def select_noised_action(self, state, noise_scale=None):
         """
         Dumb function to avoid compatibility problems with other similar functions. For SAC, we don't need additional noise as entropy provides exploration
         """
-        if self.gpu_used:
-            self.actor.to("cpu")
         self.actor.eval()
-        state = torch.tensor(state, dtype=torch.float32, device='cpu').unsqueeze(0)
-        action, _, _ = self.actor.sample(state)
+        state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        with torch.no_grad():
+            action, _, _ = self.actor.sample(state)
         action = action.detach().squeeze(0)
         
         noised_action = action
             
-        return action, noised_action
+        return action.to('cpu'), noised_action.to('cpu')
 
     def _sample_from_buffer(self, batch_size):
         """
@@ -440,12 +435,15 @@ class SAC:
 
         # Update Critics
         if self.total_it % self.critic_frequency_update == 0:
+            updated_critic = True
             with torch.no_grad():
                 next_actions, next_log_probs, _ = self.actor.sample(next_state)
                 target_q1 = self.target_critic1(next_state, next_actions)
                 target_q2 = self.target_critic2(next_state, next_actions)
                 target_q = torch.min(target_q1, target_q2) - self.alpha * next_log_probs
-                y = rewards + self.gamma * target_q
+                # Optional done masking; if not available, assume zeros
+                dones = torch.zeros_like(rewards)
+                y = rewards + self.gamma * (1 - dones) * target_q
 
             if self.using_loss_scaling and self.scaler:
                 with amp.autocast():
@@ -469,6 +467,7 @@ class SAC:
                 self.scaler.step(self.critic2_optimizer)
                 self.scaler.update()
             else:
+
                 q1_values = self.critic1(state, actions)
                 q2_values = self.critic2(state, actions)
                 
@@ -496,6 +495,7 @@ class SAC:
 
             update_target_critics = True
         else:
+            updated_critic = False
             with torch.no_grad():
                 q1_values = self.critic1(state, actions)
                 q2_values = self.critic2(state, actions)
@@ -505,6 +505,7 @@ class SAC:
 
         # Update Actor
         if self.total_it % self.actor_frequency_update == 0:
+            updated_actor = True
             new_actions, log_probs, _ = self.actor.sample(state)
             q1_new = self.critic1(state, new_actions)
             q2_new = self.critic2(state, new_actions)
@@ -535,6 +536,7 @@ class SAC:
 
             self.update_target_networks(update_target_critics)
         else:
+            updated_actor = False
             with torch.no_grad():
                 new_actions, log_probs, _ = self.actor.sample(state)
                 q1_new = self.critic1(state, new_actions)
@@ -557,7 +559,7 @@ class SAC:
             actor_loss = actor_loss.to('cpu')
             critic1_loss = critic1_loss.to('cpu')
 
-        return (actor_loss, critic1_loss, rewards)
+        return float(actor_loss.detach().cpu()), float(critic1_loss.detach().cpu()), rewards, updated_actor, updated_critic
 
     def update_target_networks(self, update_target_critics=True):
         """
@@ -660,4 +662,3 @@ class SAC:
         if os.path.exists(config_path):
             config = torch.load(config_path, map_location=self.device)
             print(f"Loaded model with buffer type: {config.get('buffer_info', {}).get('buffer_type', 'Unknown')}")
-
