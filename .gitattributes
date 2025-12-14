@@ -1,0 +1,42 @@
+# Set Python files as Python
+*.py linguist-language=Python
+
+# Set YAML files as YAML
+*.yaml linguist-language=YAML
+*.yml linguist-language=YAML
+
+# Set Jupyter notebooks as Python
+*.ipynb linguist-language=Python
+
+# Set Dockerfile as Dockerfile
+Dockerfile linguist-language=Dockerfile
+
+# Set requirements files as Python
+requirements*.txt linguist-language=Python
+requirements*.yml linguist-language=YAML
+
+# Set README as Markdown
+README.md linguist-language=Markdown
+
+# AGGRESSIVELY ignore all data and visualization files
+*.npz linguist-vendored
+*.mp4 linguist-vendored
+*.html linguist-vendored
+*.pdf linguist-vendored
+*.log linguist-vendored
+*.0 linguist-vendored
+
+# Ignore all files in data directory
+data/** linguist-vendored
+
+# Ignore TensorBoard files
+events.out.tfevents.* linguist-vendored
+
+# Ignore cache directories
+__pycache__/ linguist-vendored
+*.pyc linguist-vendored
+
+# Force specific directories to be ignored
+data/analytics/** linguist-vendored
+data/raw/** linguist-vendored
+data/archived_experiments/** linguist-vendored

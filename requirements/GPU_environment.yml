@@ -1,4 +1,4 @@
-name: fair_ris_ai_env_GPU
+name: ctrl_ris_env_GPU
 channels:
   - pytorch
   - nvidia

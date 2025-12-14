@@ -1,4 +1,4 @@
-# FAIR_RIS_AI (FRAI): Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks
+# CTRL_RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces / Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
@@ -6,7 +6,7 @@
 
 ## 🎯 Overview
 
-This repository investigates fairness vulnerabilities in AI-driven Reconfigurable Intelligent Surfaces (RIS) for Beyond 5G (B5G) and 6G communication frameworks. We focus on identifying, analyzing, and mitigating risks inherent in Reinforcement Learning (RL) control systems to ensure robust and fair implementations for next-generation wireless networks.
+This repository investigates vulnerabilities, notably fairness, in AI-driven Reconfigurable Intelligent Surfaces (RIS) for Beyond 5G (B5G) and 6G communication frameworks. We focus on identifying, analyzing, and mitigating risks inherent in Reinforcement Learning (RL) control systems to ensure robust and fair implementations for next-generation wireless networks.
 
 ### 🔬 Research Focus
 - **Fairness Analysis**: Comprehensive evaluation of AI model fairness in RIS control
@@ -31,15 +31,15 @@ Conda provides isolated environments with seamless dependency management:
 
 ```bash
 # Navigate to the project directory
-cd /path/to/FAIR_RIS_AI
+cd /path/to/CTRL_RIS
 
 # For GPU users (recommended for training):
 conda env create -f requirements/GPU_environment.yml
-conda activate fair_ris_ai_env_GPU
+conda activate ctrl_ris_env_GPU
 
 # For CPU users (faster installation):
 conda env create -f requirements/CPU_environment.yml
-conda activate fair_ris_ai_env_CPU
+conda activate ctrl_ris_env_CPU
 ```
 
 #### 🐳 Option 2: Docker (Cross-platform)
@@ -48,10 +48,10 @@ For a containerized setup that works on both CPU and GPU:
 
 ```bash
 # Pull the Docker image
-docker pull ap496/fair_ris_ai
+docker pull ap496/ctrl_ris
 
 # Run the Docker container interactively
-docker run -it ap496/fair_ris_ai
+docker run -it ap496/ctrl_ris
 ```
 
 #### 🐍 Option 3: Python venv
@@ -60,17 +60,17 @@ For a lightweight virtual environment:
 
 ```bash
 # Create and activate virtual environment
-python -m venv fair_ris_env
+python -m venv ctrl_ris_env
 
 # Activate (choose your platform):
 # macOS/Linux:
-source fair_ris_env/bin/activate
+source ctrl_ris_env/bin/activate
 
 # Windows PowerShell:
-.\fair_ris_env\Scripts\Activate.ps1
+.\ctrl_ris_env\Scripts\Activate.ps1
 
 # Windows CMD:
-.\fair_ris_env\Scripts\activate.bat
+.\ctrl_ris_env\Scripts\activate.bat
 
 # Install dependencies
 pip install --upgrade pip
@@ -148,7 +148,7 @@ For more complex experiments, you can:
 ## 📁 Repository Structure
 
 ```
-FAIR_RIS_AI/
+CTRL_RIS/
 ├── 📊 data/                          # Experimental data and results
 │   ├── analytics/                    # Analysis results and visualizations
 │   ├── archived_experiments/         # Historical experiment data
@@ -215,7 +215,7 @@ FAIR_RIS_AI/
 
 ## 🤝 Contributing
 
-We welcome contributions from the community to enhance FAIR_RIS_AI's capabilities and robustness. Your contributions help advance research in AI fairness for next-generation wireless networks.
+We welcome contributions from the community to enhance CTRL_RIS's capabilities and robustness. Your contributions help advance research in AI fairness for next-generation wireless networks.
 
 ### How to Contribute
 
@@ -229,8 +229,8 @@ We welcome contributions from the community to enhance FAIR_RIS_AI's capabilitie
 
 ```bash
 # Fork the repository
-git clone https://github.com/your-username/FAIR_RIS_AI.git
-cd FAIR_RIS_AI
+git clone https://github.com/alex-pierron/CTRL_RIS.git
+cd CTRL_RIS
 
 # Create a feature branch
 git checkout -b feature/your-feature-name
@@ -244,15 +244,28 @@ git push origin feature/your-feature-name
 
 ## 📚 Citation
 
-If you use FAIR_RIS_AI in your research, please cite our work:
+If you use CTRL_RIS in your research, please cite our work using one of the following formats:
 
+### Software Citation (Recommended)
 ```bibtex
-@misc{FAIR_RIS_AI_2025,
-  author = {Pierron, Barbeau and De Cicco, Rubio-Hernan and Garcia-Alfaro},
-  title = {FAIR_RIS_AI: Investigating AI Model Fairness Vulnerabilities in Reinforcement Learning-Driven Reconfigurable Intelligent Surfaces for B5G and 6G Frameworks},
+@software{CTRL_RIS_2025,
+  author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
+  title = {CTRL-RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems},
   year = {2025},
-  howpublished = {\url{https://github.com/alex-pierron/FAIR_RIS_AI}},
-  note = {Available at: \url{https://github.com/alex-pierron/FAIR_RIS_AI}}
+  url = {https://github.com/alex-pierron/CTRL_RIS},
+  version = {1.0.0},
+  license = {GPL-3.0}
+}
+```
+
+### Traditional Academic Citation
+```bibtex
+@misc{CTRL_RIS_2025,
+  author = {Pierron, Alex and Barbeau, Michel and De Cicco, Luca and Rubio-Hernan, Jose and Garcia-Alfaro, Joaquin},
+  title = {CTRL_RIS: Consistent and Trustworthy Reinforcement Learning for Reconfigurable Intelligent Surfaces — Investigating AI Vulnerabilities in RL-driven RIS for Beyond-5G and 6G Systems},
+  year = {2025},
+  howpublished = {\url{https://github.com/alex-pierron/CTRL_RIS}},
+  note = {Available at: \url{https://github.com/alex-pierron/CTRL_RIS}}
 }
 ```
 
@@ -265,7 +278,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 **⭐ Star this repository if you find it useful!**
 
-[![GitHub stars](https://img.shields.io/github/stars/alex-pierron/FAIR_RIS_AI?style=social)](https://github.com/alex-pierron/FAIR_RIS_AI)
-[![GitHub forks](https://img.shields.io/github/forks/alex-pierron/FAIR_RIS_AI?style=social)](https://github.com/alex-pierron/FAIR_RIS_AI)
+[![GitHub stars](https://img.shields.io/github/stars/alex-pierron/CTRL_RIS?style=social)](https://github.com/alex-pierron/CTRL_RIS)
+[![GitHub forks](https://img.shields.io/github/forks/alex-pierron/CTRL_RIS?style=social)](https://github.com/alex-pierron/CTRL_RIS)
 
 </div>
