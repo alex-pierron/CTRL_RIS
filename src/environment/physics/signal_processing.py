@@ -23,7 +23,7 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
                           W_h_t: int, W_h_r: int,
                           d_h_tx: float, d_h_rx: float, lambda_h: float, epsilon_h: float,
                           numpy_generator : np.random._generator.Generator,
-                          loop_channel_mode: bool = False, bjornson = False, nlos_only = False, los_only = False,
+                          loop_channel_mode: bool = False, nlos_only = False, los_only = False,
                           ):
     """
     Combines LoS and NLoS components using defined functions below to compute the Rician fading channel. 
@@ -46,27 +46,20 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
     """
     if not loop_channel_mode:
         diff = receiver_position - transmitter_position
-        distance = np.linalg.norm(diff) + 1e-12  # Avoid division by zero
 
-        if bjornson:
-            beta = ( (lambda_h**2) /  ((4 * np.pi) **2)  )  / (distance**2)
-            #? Using the formula from Bjornson & Demir (2024), page 252. The book is well explained and detailed
-        else:
-            beta = 1
-        
         if los_only:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h) # * Compute the deterministic LoS component
-            return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los) )
+            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los )
         
         elif nlos_only:
             # * Compute the random NLoS component
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator) # * Compute the random NLoS component
-            return np.sqrt(beta) *  np.sqrt(1 / (epsilon_h + 1)) * h_nlos
+            return np.sqrt(1 / (epsilon_h + 1)) * h_nlos
         
         else:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
+            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
         # * Combine LoS and NLoS components to form the Rician fading channel
 
@@ -78,11 +71,6 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         """alpha_h = -30  - 10 * alpha * np.log10(distance/1)
         alpha_h_linear = 10 ** (alpha_h / 10)"""
 
-        if bjornson:
-            beta = ( (lambda_h**2) /  ((4 * np.pi) **2)  )  / (distance**2)
-            #? Testing the formula from Bjornson & Demir (2024), page 252. The book is well explained and detailed
-        else:
-            beta = 1 
         # Compute the deterministic LoS component
         h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
         # Compute the random NLoS component
@@ -90,17 +78,17 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         
         if los_only:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h) # * Compute the deterministic LoS component
-            return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los) )
+            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los) 
         
         elif nlos_only:
             # * Compute the random NLoS component
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator) # * Compute the random NLoS component
-            return np.sqrt(beta) *  np.sqrt(1 / (epsilon_h + 1)) * h_nlos
+            return np.sqrt(1 / (epsilon_h + 1)) * h_nlos
         
         else:
             h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
             h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            return (np.sqrt(beta) * ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
+            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
 
 
@@ -204,10 +192,17 @@ def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     
     # First term: Inter-user interference - VECTORIZED
     if len(indices_except_k) > 0 and use_inter_user_interferences:
+        inter_user_interference_term = 0
+        for other_user_indice in indices_except_k:
+            interference_user = np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W[:, other_user_indice].reshape(-1, 1) # W[:, other_user_indice]
+            inter_user_interference_term += np.abs(interference_user)**2
+        """
+        inter_user_interference_term = np.sum(np.abs(interference_matrix)**2)
         # Vectorized computation for all interfering users at once
         W_except_k = W[:, indices_except_k]  # Shape: (N_t, K-1)
         interference_matrix = np.sqrt(gains_transmitter_ris_receiver[k]) * H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS @ W_except_k
         inter_user_interference_term = np.sum(np.abs(interference_matrix)**2)
+        """
     else:
         inter_user_interference_term = 0
 

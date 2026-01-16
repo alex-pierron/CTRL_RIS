@@ -303,7 +303,6 @@ class RIS_Duplex(gym.Env):
         # =====================================================================
         # Debugging and testing flags
         # =====================================================================
-        self.bjornson = self.env_config.get('bjornson', False)  # Use Bjornson channel model
         self.debugging = self.env_config.get('debugging', False)  # Enable debugging mode
         if self.debugging:
             self.test_point_for_user = np.array(self.env_config.get('test_point_for_user', [122,88]))
@@ -853,7 +852,7 @@ class RIS_Duplex(gym.Env):
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
-            numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
+            numpy_generator=self.numpy_rng, los_only = self.los_only
         )
 
         if self.debugging:
@@ -865,7 +864,7 @@ class RIS_Duplex(gym.Env):
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
-            numpy_generator=self_second_np_rng ,bjornson = True,
+            numpy_generator=self_second_np_rng ,
             )
         
             self_second_np_rng = np.random.default_rng(123)
@@ -876,7 +875,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self_second_np_rng, nlos_only = True ,bjornson = True,
+                numpy_generator=self_second_np_rng, nlos_only = True ,
             )])
 
         # Compute RIS -> BS channel
@@ -887,7 +886,7 @@ class RIS_Duplex(gym.Env):
             d_h_tx=self._d_h[1], d_h_rx=self._d_h[0],
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
-            numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only
+            numpy_generator=self.numpy_rng, los_only = self.los_only
         )
 
         # Draw the first phase noise matrix
@@ -1076,7 +1075,7 @@ class RIS_Duplex(gym.Env):
                     d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                     lambda_h=self._lambda_h,
                     epsilon_h=self.rician_factor,
-                    numpy_generator=self.numpy_rng, bjornson = self.bjornson,
+                    numpy_generator=self.numpy_rng, 
                 ))  # Shape: (1, M)
 
         # Compute BS -> Users channels using list comprehension
@@ -1088,7 +1087,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng,bjornson = self.bjornson,los_only = self.los_only,
+                numpy_generator=self.numpy_rng,los_only = self.los_only,
             ) for k in range(self.K)
         ])  # Shape: (K, 1, M)
 
@@ -1101,7 +1100,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
+                numpy_generator=self.numpy_rng, los_only = self.los_only,
             ) for k in range(self.K)
         ])  # Shape: (K, 1, M)
 
@@ -1114,7 +1113,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
+                numpy_generator=self.numpy_rng, los_only = self.los_only,
             ) for l in range(self._num_eavesdroppers)
         ])  # Shape: (L, 1, M)
 
@@ -1130,7 +1129,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[2], d_h_rx=self._d_h[1],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
+                numpy_generator=self.numpy_rng, los_only = self.los_only,
             ) for k in range(self.K)
         ])  # Shape: (K, M, 1)
 
@@ -1143,7 +1142,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3], 
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, bjornson = self.bjornson,los_only = self.los_only,
+                numpy_generator=self.numpy_rng, los_only = self.los_only,
             ) for l in range(self._num_eavesdroppers)
         ])  # Shape: (L, 1, M)
 
@@ -1162,7 +1161,7 @@ class RIS_Duplex(gym.Env):
                                                                 W_h_t = self._M, W_h_r = 1,
                                                                 d_h_tx = self._d_h[1], d_h_rx = self._d_h[3],
                                                                 lambda_h = self._lambda_h,
-                                                                epsilon_h = self.rician_factor,bjornson = self.bjornson,los_only = self.los_only,
+                                                                epsilon_h = self.rician_factor,los_only = self.los_only,
                                                                 numpy_generator = self.numpy_rng) ) 
         self._channel_matrices["H_RIS_Eaves_downlink"] = np.array(H_RIS_Eaves_downlink)  # Shape: (L, 1, M)
         
@@ -1175,7 +1174,7 @@ class RIS_Duplex(gym.Env):
                                                                 W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
                                                                 d_h_rx = self._d_h[3],
                                                                 lambda_h =  self._lambda_h,
-                                                                epsilon_h = self.rician_factor,bjornson = self.bjornson, los_only = self.los_only,
+                                                                epsilon_h = self.rician_factor, los_only = self.los_only,
                                                                 numpy_generator = self.numpy_rng ) ) 
             self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
 
