@@ -853,7 +853,7 @@ class RIS_Duplex(gym.Env):
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
             numpy_generator=self.numpy_rng, los_only = self.los_only
-        )
+        ) # Matrix size self._M X self.N_t
 
         if self.debugging:
             self_second_np_rng = np.random.default_rng(123)
@@ -1476,27 +1476,33 @@ class RIS_Duplex(gym.Env):
         Returns:
             dict: SINR ratios per user
         """
-        num_users = self._W.shape[1]
         self.sinr_downlink_users = np.zeros(self.num_users)
         self.sinr_downlink_details = {}
 
-        H_RIS_Users = self._channel_matrices["H_RIS_Users"]
-        H_BS_RIS = self._channel_matrices["H_BS_RIS"]
-        gains = self._gains_transmitter_ris_receiver
+        #* New version (19/01/2026)
         H_Users_RIS = self._channel_matrices.get("H_Users_RIS", np.zeros((self.K, self.M, 1)))
+        H_RIS_Users = self._channel_matrices["H_RIS_Users"] # Shape: (K, N_rx, M) 
+        H_BS_RIS = self._channel_matrices["H_BS_RIS"]       # Shape: (M, N_tx)
 
-        for k in range(num_users):
-            w_k = self._W[:, k].reshape(-1, 1)
-            signal = np.squeeze(
-                np.abs(
-                    np.sqrt(gains[k]) * H_RIS_Users[k] @ self._Theta_Phi @ H_BS_RIS @ w_k
-                ) ** 2
-            )
+        for k in range(self.K):
 
-            # Interference + noise
+            gain_scale = np.sqrt(self._gains_transmitter_ris_receiver[k])
+            H_ris_path = H_RIS_Users[k] @ self._Theta_Phi @ H_BS_RIS
+            # User k channel
+            H_eff_k = gain_scale * H_ris_path
+
+            # Signal = H_eff_k @ w_k
+            # Puissance = || H_eff_k @ w_k ||^2
+            w_k = self._W[:, k].reshape(-1, 1) # Beamformer de l'utilisateur k
+            received_signal_vector = H_eff_k @ w_k
+            
+            # La puissance est la norme au carré du vecteur reçu (fonctionne pour SISO et MIMO)
+            signal = np.linalg.norm(received_signal_vector) ** 2
+
+            # C. Interference + noise
             interference_noise = Gamma_Downlink_k(
                 k, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
-                gains, H_BS_RIS, H_RIS_Users, self.kappa[-1],
+                self._gains_transmitter_ris_receiver, H_BS_RIS, H_RIS_Users, self.kappa[-1],
                 H_Users_RIS,
                 self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
                 use_inter_user_interferences=self.use_inter_user_interferences,
@@ -1505,7 +1511,8 @@ class RIS_Duplex(gym.Env):
             # Compute SINR
             sinr_ratio = signal / interference_noise
             self.sinr_downlink_users[k] = sinr_ratio
-
+            if self.print_info:
+                print(f"Step: {self._num_step} --- User {k} signal: {signal} --- Interference: {interference_noise}")
             # Collect detailed stats only if verbose
             if self.verbose:
                 sinr_db = watts_to_db(sinr_ratio)
@@ -1547,7 +1554,6 @@ class RIS_Duplex(gym.Env):
                     self.max_sinr_b_k = self.sinr_downlink_details[k]
 
         pass
-        
 
 
     def _SINR_uplink_all_users(self):

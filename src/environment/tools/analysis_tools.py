@@ -16,11 +16,11 @@ matplotlib.set_loglevel('warning')
 def scaling_factor(power_patterns_array: np.ndarray, threshold: float = 1.5e1):
     def round_down_to_two_significant_digits(number):
         if number == 0:
-            return 0
-        exponent = floor(log10(abs(number)))  # Find the order of magnitude
-        factor = 10 ** (exponent - 1)  # Compute the factor to extract first two digits
-        significant_digits = floor(number / factor)  # Get first two significant digits
-        return significant_digits * factor  # Reconstruct the number with rounded-down value
+            return np.finfo(float).eps
+
+        exponent = np.floor(np.log10(number))
+        factor = 10 ** (exponent - 1)
+        return np.floor(number / factor) * factor
 
     means = np.mean(power_patterns_array, axis=1)
     # Replace zero means with a very small number to avoid division by zero
@@ -343,11 +343,22 @@ class SituationRenderer:
             ), row=1, col=i+1)
 
             # Scale factors
-            power_scale = scaling_factor(power_pattern, threshold=1e1)
+            power_scales = scaling_factor(power_pattern, threshold=1e1)
+            
+            #print(f"The power_scales shape is {np.shape(power_scales)}")
+            #print(f"The power_pattern shape is {np.shape(power_pattern)}")
+            #print("Means:", np.mean(power_pattern, axis=1))
+            #print("Power_scales:", power_scales)
+            #print(power_pattern[0] == power_pattern[1])
             for index_user, user_power_pattern in enumerate(power_pattern):
+                #print("Index User:", index_user)
+                """print("Mean:", np.mean(user_power_pattern))
+                print("Scales:", power_scales[index_user])
+                print(f"The power pattern shape for user {index_user} is {np.shape(user_power_pattern)}")
+                print(f"------------------------------------------------------")"""
                 # Plot RIS Power Pattern
-                x_polar = power_scale[index_user] * user_power_pattern * np.cos(self.angles) + self.RIS_position[0]
-                y_polar = power_scale[index_user] * user_power_pattern * np.sin(self.angles) + self.RIS_position[1]
+                x_polar = power_scales[index_user] * user_power_pattern * np.cos(self.angles) + self.RIS_position[0]
+                y_polar = power_scales[index_user] * user_power_pattern * np.sin(self.angles) + self.RIS_position[1]
                 fig.add_trace(go.Scatter(
                     x=x_polar,
                     y=y_polar,

@@ -776,7 +776,6 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                                 reward=max_episode_reward,
                                 step_number=episode_best_power_patterns["steps"][-1],
                                 episode=episode)
-                
                 renderer.plotly_single_image(
                     max_W_power_patterns,
                     max_downlink_power_patterns,
@@ -802,7 +801,6 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         # Save plots at designated frequency to visualize system evolution
         elif episode % plot_saving_frequency == 0 and not debugging:
             rendering = use_rendering and buffer_filled
-            
             if rendering:
                 # Create single image visualization
                 renderer.plotly_single_image(
