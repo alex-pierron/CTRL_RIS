@@ -1487,9 +1487,9 @@ class RIS_Duplex(gym.Env):
         for k in range(self.K):
 
             gain_scale = np.sqrt(self._gains_transmitter_ris_receiver[k])
-            H_ris_path = H_RIS_Users[k] @ self._Theta_Phi @ H_BS_RIS
+            H_BS_RIS_UEk_channel = H_RIS_Users[k] @ self._Theta_Phi @ H_BS_RIS
             # User k channel
-            H_eff_k = gain_scale * H_ris_path
+            H_eff_k = gain_scale * H_BS_RIS_UEk_channel
 
             # Signal = H_eff_k @ w_k
             # Puissance = || H_eff_k @ w_k ||^2
@@ -1501,8 +1501,8 @@ class RIS_Duplex(gym.Env):
 
             # C. Interference + noise
             interference_noise = Gamma_Downlink_k(
-                k, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
-                self._gains_transmitter_ris_receiver, H_BS_RIS, H_RIS_Users, self.kappa[-1],
+                k, self.K, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
+                self._gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel, H_BS_RIS, H_RIS_Users, self.kappa[-1],
                 H_Users_RIS,
                 self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
                 use_inter_user_interferences=self.use_inter_user_interferences,
@@ -2031,6 +2031,7 @@ class RIS_Duplex(gym.Env):
         if sum_squares == 0:
             return round(1/self.K,ndigits=4)  
         jain_index = (sum_rewards ** 2) / (self.K * sum_squares)
+        #jain_index = (np.min(self.basic_reward_per_user) / np.max(self.basic_reward_per_user))
         return round(jain_index,ndigits=4) 
          
 

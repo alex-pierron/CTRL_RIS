@@ -179,19 +179,17 @@ def computing_NLoS(W_h_t: int, W_h_r: int, numpy_generator : np.random._generato
 # ?  ----------------------------------------------     FUNCTIONS TO COMPUTE THE GAMMA TERMS FOR SINR CALCULATION    --------------------------------------------------------------
 
 
-def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
-              gains_transmitter_ris_receiver,
+def Gamma_Downlink_k(k, K, W, WWH, Theta_Phi, Phi_H_Theta_H,
+              gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel,
               H_BS_RIS, H_RIS_Users, kappa_S_d,
               H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared,
               use_inter_user_interferences: bool = True):
     """Vectorized version of Gamma_B_k function."""
-    K = W.shape[1]
     # Calculate all indices except k
     indices_except_k = np.arange(K)[np.arange(K) != k]
     gain_scale = np.sqrt(gains_transmitter_ris_receiver[k])
     # RIS term : (N_rx, M) @ (M, M) @ (M, N_tx) -> (N_rx, N_tx), Si l'utilisateur est mono-antenne, N_rx = 1.
-    H_ris_user_path = H_RIS_Users[k] @ Theta_Phi @ H_BS_RIS # Complete effective canal for user k
-    H_eff_k = gain_scale * H_ris_user_path
+    H_eff_k = gain_scale * H_BS_RIS_UEk_channel # Complete effective canal for user k
 
     # First term: Inter-user interference - VECTORIZED
     if len(indices_except_k) > 0 and use_inter_user_interferences:
@@ -202,7 +200,7 @@ def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
         # La puissance totale d'interférence est la somme des énergies de chaque colonne
         inter_user_interference_term = np.linalg.norm(received_interference_matrix) ** 2
     else:
-        inter_user_interference_term = 0
+        inter_user_interference_term = 1.1 * sigma_k_squared 
 
     # Third term: User-induced interference - VECTORIZED, For all users except k
     if len(indices_except_k) > 0:
@@ -229,12 +227,12 @@ def Gamma_Downlink_k(k, W, WWH, Theta_Phi, Phi_H_Theta_H,
     distortion_term = 0
     #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
     # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
-    #distortion_term = (kappa_S_d * H_ris_user_path @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
+    #distortion_term = (kappa_S_d * H_BS_RIS_UEk_channel @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
     
     # Noise term
     sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
     
-    return np.squeeze(inter_user_interference_term + sigma_noise_term ) #+ distortion_term + user_interference_term)
+    return np.squeeze(inter_user_interference_term + sigma_noise_term) #+ distortion_term + user_interference_term)
 
 
 

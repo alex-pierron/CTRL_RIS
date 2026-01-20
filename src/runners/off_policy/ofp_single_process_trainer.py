@@ -776,6 +776,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                                 reward=max_episode_reward,
                                 step_number=episode_best_power_patterns["steps"][-1],
                                 episode=episode)
+                    
                 renderer.plotly_single_image(
                     max_W_power_patterns,
                     max_downlink_power_patterns,
@@ -823,7 +824,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                     save_dir=f"{log_dir}/animations/checkpoints",
                     name_file=f"episode_{episode}_best_profiles.mp4"
                 )
-            
+
             if rendering and using_eavesdropper:
                     renderer.plotly_single_image(
                         eave_max_W_power_patterns,

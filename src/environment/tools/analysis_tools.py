@@ -352,6 +352,7 @@ class SituationRenderer:
             #print(power_pattern[0] == power_pattern[1])
             for index_user, user_power_pattern in enumerate(power_pattern):
                 #print("Index User:", index_user)
+                #print(user_power_pattern)
                 """print("Mean:", np.mean(user_power_pattern))
                 print("Scales:", power_scales[index_user])
                 print(f"The power pattern shape for user {index_user} is {np.shape(user_power_pattern)}")
