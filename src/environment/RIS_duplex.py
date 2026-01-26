@@ -133,22 +133,33 @@ class RIS_Duplex(gym.Env):
         self._M = self.env_config['num_RIS_elements']
 
         # =====================================================================
-        # Power & noise parameters
+        # Channels & noise parameters
         # =====================================================================
         # Base station maximum transmit power (convert from dBm to Watts)
         self.P_max = dbm_to_watts(self.env_config['BS_max_power'])
-        # User equipment transmit power (convert from mW to Watts)
+        # User equipment transmit power (convert from mW to Watts) and LoS channels (Rician) hyperparameters
         self.P_users = np.ones(self.K) * self.env_config.get('user_transmit_power', 100) * 1e-3
         self._uplink_used = bool(np.any(self.P_users > 0))
         self._lambda_h = self.env_config.get('lambda_h', 0.1)  # Wavelength in meters
         self._d_h = self.env_config.get('d_h', self._lambda_h / 2) * np.ones(4)  # Inter-element spacing in meters
-        self.los_only = self.env_config.get('los_only', False) 
         self.rician_factor = self.env_config.get('rician_factor', 10)
         self.channel_bandwidth = self.env_config.get('channel_bandwidth', 10)  # Bandwidth in MHz
         self.delta_squared = self.env_config.get('noise_power_density', -174)  # Noise power density in dBm/Hz
         # Convert noise power density to Watts for computation
         self.delta_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # Uplink noise in W
         self.sigma_k_squared = dBm_Hz_to_Watts(self.delta_squared, self.channel_bandwidth)  # Downlink noise in W
+
+        # NLoS channels (Rayleigh or Nakagami) hyperparameters
+        self.use_nlos = self.env_config.get('use_nlos', False) 
+        self.nlos_model = self.env_config.get('nlos_model', "nakagami")
+        if self.use_nlos:
+            self.nlos_path_loss_exponent = self.env_config.get('NLoS_path_loss_exponent', 3.0)
+            self.nlos_reference_distance = self.env_config.get('NLoS_reference_distance', 1.0) # in meters
+            self.nlos_additional_loss_dB = self.env_config.get('NLoS_additional_loss_dB', 0) # in dB
+            if self.nlos_model =="nakagami":
+                self.nakagami_m = self.env_config.get('nakagami_m', "0.8")
+            else:
+                self.nakagami_m = 1
 
         # =====================================================================
         # Information tracking structures
@@ -170,15 +181,15 @@ class RIS_Duplex(gym.Env):
         # NOTE: These arrays maintain compatibility with older code that may
         # reference these attributes directly. New code should use user_info/eavesdropper_info.
         self.sinr_downlink_users = np.zeros(self.K)
-        self.sinr_downlink_signals = np.zeros(self.K)
+        self.sinr_downlink_legitimate_signals = np.zeros(self.K)
         self.sinr_downlink_interfs = np.zeros(self.K)
         self.sinr_uplink_users = np.zeros(self.K)
         self.uplink_signal_strength = np.zeros(self.K)
         self.sinr_downlink_details = {}
-        self.downlink_signal_strength = np.zeros(self.K)
+        self.downlink_legitimate_signal_strength = np.zeros(self.K)
         self.downlink_sinr_average = np.zeros(self.K)
-        self.min_downlink_signal_strength = np.full(self.K, np.inf)
-        self.max_downlink_signal_strength = np.full(self.K, -np.inf)
+        self.min_downlink_legitimate_signal_strength = np.full(self.K, np.inf)
+        self.max_downlink_legitimate_signal_strength = np.full(self.K, -np.inf)
 
         self.mu_d_l_squared = self.env_config.get('mu_d_l_squared', 3.981e-14)
         self.mu_u_l_squared = self.env_config.get('mu_u_l_squared', 3.981e-14)
@@ -814,14 +825,14 @@ class RIS_Duplex(gym.Env):
 
         # Legacy arrays for backward compatibility
         self.sinr_downlink_users = np.zeros(self.K)
-        self.sinr_downlink_signals = np.zeros(self.K)
+        self.sinr_downlink_legitimate_signals = np.zeros(self.K)
         self.sinr_downlink_interfs = np.zeros(self.K)
         self.sinr_downlink_details = {}
-        self.downlink_signal_strength = np.zeros(self.K)
+        self.downlink_legitimate_signal_strength = np.zeros(self.K)
         self.downlink_sinr_average = np.zeros(self.K)
-        self.min_downlink_signal_strength = np.full(self.K, np.inf)
+        self.min_downlink_legitimate_signal_strength = np.full(self.K, np.inf)
         self.max_downlink_interf_k = -np.inf * np.ones(self.K)
-        self.max_downlink_signal_strength = np.full(self.K, -np.inf)
+        self.max_downlink_legitimate_signal_strength = np.full(self.K, -np.inf)
 
         
         self.sinr_uplink_users = np.zeros(self.K)
@@ -843,6 +854,7 @@ class RIS_Duplex(gym.Env):
 
         self._gains_transmitter_ris_receiver = np.zeros(self.K + self._num_eavesdroppers)
         self._gains_transmitter_ris = 0
+
         # Compute BS -> RIS channel
     
         self._channel_matrices["H_BS_RIS"] = rician_fading_channel(
@@ -852,7 +864,7 @@ class RIS_Duplex(gym.Env):
             d_h_tx=self._d_h[0], d_h_rx=self._d_h[1],
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
-            numpy_generator=self.numpy_rng, los_only = self.los_only
+            numpy_generator=self.numpy_rng,
         ) # Matrix size self._M X self.N_t
 
         if self.debugging:
@@ -875,7 +887,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self_second_np_rng, nlos_only = True ,
+                numpy_generator=self_second_np_rng,
             )])
 
         # Compute RIS -> BS channel
@@ -886,8 +898,25 @@ class RIS_Duplex(gym.Env):
             d_h_tx=self._d_h[1], d_h_rx=self._d_h[0],
             lambda_h=self._lambda_h,
             epsilon_h=self.rician_factor,
-            numpy_generator=self.numpy_rng, los_only = self.los_only
+            numpy_generator=self.numpy_rng,
         )
+
+        # Compute BS -> Users channels when NLoS is being used
+
+        if self.use_nlos:
+
+            self._channel_matrices["H_BS_Users"] = np.array([
+                nakagami_m_fading_channel(
+                    transmitter_position=self._BS_position,
+                    receiver_position=self.users_positions[k],
+                    W_h_t=self.N_t, W_h_r=1, m= self.nakagami_m,
+                    lambda_h = self._lambda_h,
+                    numpy_generator=self.numpy_rng,
+                    path_loss_exponent=self.nlos_path_loss_exponent,
+                    reference_distance=self.nlos_reference_distance,
+                    additional_loss_dB=self.nlos_additional_loss_dB
+                ) for k in range(self.K)
+            ])  # Shape: (K, 1, M)
 
         # Draw the first phase noise matrix
         self.phases = self.numpy_rng.uniform(-90, 90, self._M)
@@ -1050,6 +1079,22 @@ class RIS_Duplex(gym.Env):
             gain_transmitter_to_RIS = ( A_m / (4 * np.pi * (d_t **2) ) )  
             self._gains_transmitter_ris = np.sqrt(gain_transmitter_to_RIS)
 
+            """
+            #? kept for later when adding mobility patterns. Should be NLoS (Rayleigh or Nakagami-m) channels, not Rician
+            if self.use_nlos:
+                self._channel_matrices["H_BS_Users"] = np.array([
+                        nakagami_m_fading_channel(
+                            transmitter_position=self._BS_position,
+                            receiver_position=self.users_positions[k],
+                            W_h_t=self.N_t, W_h_r=1, m= self.nakagami_m,
+                            numpy_generator=self.numpy_rng,
+                            path_loss_exponent=self.nlos_path_loss_exponent,
+                            reference_distance=self.nlos_reference_distance,
+                            reference_loss_dB=self.nlos_reference_loss_dB
+                        ) for k in range(self.K)
+                    ])  # Shape: (K, 1, M)
+            """
+
             if self.eavesdropper_active:
                 self._gains_transmitter_ris_receiver[self.K:] = np.array([
                         calculate_gain_transmitter_ris_receiver(
@@ -1078,18 +1123,6 @@ class RIS_Duplex(gym.Env):
                     numpy_generator=self.numpy_rng, 
                 ))  # Shape: (1, M)
 
-        # Compute BS -> Users channels using list comprehension
-        self._channel_matrices["H_BS_Users"] = np.array([
-            rician_fading_channel(
-                transmitter_position=self._BS_position,
-                receiver_position=self.users_positions[k],
-                W_h_t=self.N_t, W_h_r=1,
-                d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
-                lambda_h=self._lambda_h,
-                epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng,los_only = self.los_only,
-            ) for k in range(self.K)
-        ])  # Shape: (K, 1, M)
 
         # Compute RIS -> Users channels using list comprehension
         self._channel_matrices["H_RIS_Users"] = np.array([
@@ -1100,7 +1133,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[2],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, los_only = self.los_only,
+                numpy_generator=self.numpy_rng,
             ) for k in range(self.K)
         ])  # Shape: (K, 1, M)
 
@@ -1113,7 +1146,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, los_only = self.los_only,
+                numpy_generator=self.numpy_rng,
             ) for l in range(self._num_eavesdroppers)
         ])  # Shape: (L, 1, M)
 
@@ -1129,7 +1162,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[2], d_h_rx=self._d_h[1],
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, los_only = self.los_only,
+                numpy_generator=self.numpy_rng,
             ) for k in range(self.K)
         ])  # Shape: (K, M, 1)
 
@@ -1142,7 +1175,7 @@ class RIS_Duplex(gym.Env):
                 d_h_tx=self._d_h[1], d_h_rx=self._d_h[3], 
                 lambda_h=self._lambda_h,
                 epsilon_h=self.rician_factor,
-                numpy_generator=self.numpy_rng, los_only = self.los_only,
+                numpy_generator=self.numpy_rng,
             ) for l in range(self._num_eavesdroppers)
         ])  # Shape: (L, 1, M)
 
@@ -1161,7 +1194,7 @@ class RIS_Duplex(gym.Env):
                                                                 W_h_t = self._M, W_h_r = 1,
                                                                 d_h_tx = self._d_h[1], d_h_rx = self._d_h[3],
                                                                 lambda_h = self._lambda_h,
-                                                                epsilon_h = self.rician_factor,los_only = self.los_only,
+                                                                epsilon_h = self.rician_factor,
                                                                 numpy_generator = self.numpy_rng) ) 
         self._channel_matrices["H_RIS_Eaves_downlink"] = np.array(H_RIS_Eaves_downlink)  # Shape: (L, 1, M)
         
@@ -1174,7 +1207,7 @@ class RIS_Duplex(gym.Env):
                                                                 W_h_t = self._M, W_h_r = 1, d_h_tx = self._d_h[1],
                                                                 d_h_rx = self._d_h[3],
                                                                 lambda_h =  self._lambda_h,
-                                                                epsilon_h = self.rician_factor, los_only = self.los_only,
+                                                                epsilon_h = self.rician_factor,
                                                                 numpy_generator = self.numpy_rng ) ) 
             self._channel_matrices["H_RIS_Eaves_uplink"] = np.array(H_RIS_Eaves_uplink)  # Shape: (L, 1, M)
 
@@ -1185,7 +1218,7 @@ class RIS_Duplex(gym.Env):
         """Compute the uplink combining matrix `F` for the current step."""
         H_u = self._channel_matrices["H_RIS_BS"]
         for i in range(self.K):
-            combining_vector = H_u  @ self._Theta @self._Phi @ self._channel_matrices["H_Users_RIS"][i]
+            combining_vector = H_u  @ self._Theta @ self._Phi @ self._channel_matrices["H_Users_RIS"][i]
             self.F[:,i] = np.squeeze(combining_vector)
         pass
     
@@ -1481,7 +1514,9 @@ class RIS_Duplex(gym.Env):
 
         #* New version (19/01/2026)
         H_Users_RIS = self._channel_matrices.get("H_Users_RIS", np.zeros((self.K, self.M, 1)))
-        H_RIS_Users = self._channel_matrices["H_RIS_Users"] # Shape: (K, N_rx, M) 
+        H_RIS_Users = self._channel_matrices["H_RIS_Users"] # Shape: (K, 1, M) 
+        #? kept for later when adding mobility patterns. Should be NLoS (Rayleigh or Nakagami-m) channels, not Rician
+        
         H_BS_RIS = self._channel_matrices["H_BS_RIS"]       # Shape: (M, N_tx)
 
         for k in range(self.K):
@@ -1491,62 +1526,76 @@ class RIS_Duplex(gym.Env):
             # User k channel
             H_eff_k = gain_scale * H_BS_RIS_UEk_channel
 
-            # Signal = H_eff_k @ w_k
+            # legitimate_signal = H_eff_k @ w_k
             # Puissance = || H_eff_k @ w_k ||^2
             w_k = self._W[:, k].reshape(-1, 1) # Beamformer de l'utilisateur k
-            received_signal_vector = H_eff_k @ w_k
-            
-            # La puissance est la norme au carré du vecteur reçu (fonctionne pour SISO et MIMO)
-            signal = np.linalg.norm(received_signal_vector) ** 2
 
-            # C. Interference + noise
-            interference_noise = Gamma_Downlink_k(
-                k, self.K, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
-                self._gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel, H_BS_RIS, H_RIS_Users, self.kappa[-1],
-                H_Users_RIS,
-                self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
-                use_inter_user_interferences=self.use_inter_user_interferences,
-            )
+            if self.use_nlos:
+                H_BS_Users =self._channel_matrices["H_BS_Users"] # Shape: (K, 1, N) 
+                received_legitimate_signal_vector = H_eff_k @ w_k + H_BS_Users[k] @ w_k
+                #print(np.linalg.norm(H_eff_k) ** 2, np.linalg.norm(H_BS_Users) ** 2)
+                legitimate_signal = np.linalg.norm(received_legitimate_signal_vector) ** 2
+                interference_noise = Gamma_Downlink_k(
+                    k, self.K, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
+                    self._gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel, H_BS_RIS, H_RIS_Users, self.kappa[-1],
+                    H_Users_RIS,
+                    self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
+                    use_inter_user_interferences=self.use_inter_user_interferences,
+                    use_nlos=self.use_nlos,
+                    H_BS_Users=H_BS_Users,
+                )
+
+            else:
+                received_legitimate_signal_vector = H_eff_k @ w_k
+                legitimate_signal = np.linalg.norm(received_legitimate_signal_vector) ** 2
+                interference_noise = Gamma_Downlink_k(
+                    k, self.K, self._W, self.WWH, self._Theta_Phi, self.Phi_H_Theta_H,
+                    self._gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel, H_BS_RIS, H_RIS_Users, self.kappa[-1],
+                    H_Users_RIS,
+                    self.P_users, self.kappa[0], self.SI_coef, self.sigma_k_squared,
+                    use_inter_user_interferences=self.use_inter_user_interferences,
+                    use_nlos=False,
+                )
 
             # Compute SINR
-            sinr_ratio = signal / interference_noise
+            sinr_ratio = legitimate_signal / interference_noise
             self.sinr_downlink_users[k] = sinr_ratio
             if self.print_info:
-                print(f"Step: {self._num_step} --- User {k} signal: {signal} --- Interference: {interference_noise}")
+                print(f"Step: {self._num_step} --- User {k} legitimate_signal: {legitimate_signal} --- Interference: {interference_noise}")
             # Collect detailed stats only if verbose
             if self.verbose:
                 sinr_db = watts_to_db(sinr_ratio)
-                self._update_user_info_downlink(k, sinr_ratio, sinr_db, signal, interference_noise)
+                self._update_user_info_downlink(k, sinr_ratio, sinr_db, legitimate_signal, interference_noise)
 
                 # Legacy arrays for backward compatibility
-                self.downlink_signal_strength[k] += signal
-                self.min_downlink_signal_strength[k] = min(signal, self.min_downlink_signal_strength[k])
-                if signal > self.max_downlink_signal_strength[k]:
+                self.downlink_legitimate_signal_strength[k] += legitimate_signal
+                self.min_downlink_legitimate_signal_strength[k] = min(legitimate_signal, self.min_downlink_legitimate_signal_strength[k])
+                if legitimate_signal > self.max_downlink_legitimate_signal_strength[k]:
                     self.max_downlink_interf_k[k] = interference_noise
-                    self.max_downlink_signal_strength[k] = signal
+                    self.max_downlink_legitimate_signal_strength[k] = legitimate_signal
 
-                self.sinr_downlink_signals[k] += signal
+                self.sinr_downlink_legitimate_signals[k] += legitimate_signal
                 self.sinr_downlink_interfs[k] += interference_noise
                 self.downlink_sinr_average[k] += sinr_ratio
 
                 if self._num_step > 0:
                     sinr_average_ratio = self.downlink_sinr_average[k] / self._num_step
-                    avg_signal_dbm = watts_to_dbm(self.downlink_signal_strength[k] / self._num_step)
+                    avg_legitimate_signal_dbm = watts_to_dbm(self.downlink_legitimate_signal_strength[k] / self._num_step)
                 else:
                     sinr_average_ratio = 0.0
-                    avg_signal_dbm = -np.inf
+                    avg_legitimate_signal_dbm = -np.inf
 
                 self.sinr_downlink_details[k] = {
                     "SINR_in_db": float(sinr_db),
                     "Average_SINR_in_db": float(watts_to_db(sinr_average_ratio)),
                     "Average_SINR_ratio": float(sinr_average_ratio),
                     "ratio": float(sinr_ratio),
-                    "direct_signal": float(signal),
+                    "direct_legitimate_signal": float(legitimate_signal),
                     "interference_noise": float(interference_noise),
                     "Average interference_noise": float(watts_to_dbm(self.sinr_downlink_interfs[k] / max(self._num_step, 1))),
-                    "min_signal_dbm": float(watts_to_dbm(self.min_downlink_signal_strength[k])),
-                    "max_signal_dbm": float(watts_to_dbm(self.max_downlink_signal_strength[k])),
-                    "avg_signal_dbm": float(avg_signal_dbm),
+                    "min_legitimate_signal_dbm": float(watts_to_dbm(self.min_downlink_legitimate_signal_strength[k])),
+                    "max_legitimate_signal_dbm": float(watts_to_dbm(self.max_downlink_legitimate_signal_strength[k])),
+                    "avg_legitimate_signal_dbm": float(avg_legitimate_signal_dbm),
                 }
 
                 # Track maximum SINR globally
@@ -1573,7 +1622,7 @@ class RIS_Duplex(gym.Env):
         H_RIS_BS = self._channel_matrices["H_RIS_BS"]
         H_Users_RIS = self._channel_matrices["H_Users_RIS"]
         gains = self._gains_transmitter_ris_receiver
-
+        H_Users_BS =self._channel_matrices["H_BS_Users"] # Shape: (K, N, 1)
         for k in range(self.K):
             # If user has no transmit power, SINR is zero
             if self.P_users[k] == 0:

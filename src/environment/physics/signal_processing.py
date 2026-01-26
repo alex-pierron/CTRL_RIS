@@ -23,10 +23,10 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
                           W_h_t: int, W_h_r: int,
                           d_h_tx: float, d_h_rx: float, lambda_h: float, epsilon_h: float,
                           numpy_generator : np.random._generator.Generator,
-                          loop_channel_mode: bool = False, nlos_only = False, los_only = False,
+                          loop_channel_mode: bool = False,
                           ):
     """
-    Combines LoS and NLoS components using defined functions below to compute the Rician fading channel. 
+    Compute the Rician fading channel. 
     Returns a matrix of size N_r X N_t with N_r the number of receiving antennas and N_t the number of transmitting 
     antennas.
 
@@ -47,19 +47,9 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
     if not loop_channel_mode:
         diff = receiver_position - transmitter_position
 
-        if los_only:
-            h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h) # * Compute the deterministic LoS component
-            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los )
-        
-        elif nlos_only:
-            # * Compute the random NLoS component
-            h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator) # * Compute the random NLoS component
-            return np.sqrt(1 / (epsilon_h + 1)) * h_nlos
-        
-        else:
-            h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
-            h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1) * h_nlos )) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
+        h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
+        h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
+        return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
         # * Combine LoS and NLoS components to form the Rician fading channel
 
@@ -76,19 +66,9 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
         # Compute the random NLoS component
         h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
         
-        if los_only:
-            h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h) # * Compute the deterministic LoS component
-            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los) 
-        
-        elif nlos_only:
-            # * Compute the random NLoS component
-            h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator) # * Compute the random NLoS component
-            return np.sqrt(1 / (epsilon_h + 1)) * h_nlos
-        
-        else:
-            h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
-            h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-            return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
+        h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
+        h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
+        return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
 
 
@@ -176,6 +156,105 @@ def computing_NLoS(W_h_t: int, W_h_r: int, numpy_generator : np.random._generato
     return h_nlos
 
 
+def nakagami_m_fading_channel(transmitter_position: np.ndarray, 
+                             receiver_position: np.ndarray,
+                             W_h_t: int, 
+                             W_h_r: int, 
+                             m: float,
+                             lambda_h: float,
+                             numpy_generator: np.random._generator.Generator,
+                             path_loss_exponent: float = 3.0,
+                             reference_distance: float = 1.0,
+                             additional_loss_dB: float = 0.0) -> np.ndarray:
+    """
+    Compute the Nakagami-m fading channel model with realistic path loss.
+    
+    Parameters
+    ----------
+    W_h_t : int
+        Number of antenna elements in the Uniform Linear Array (ULA) at the transmitter.
+        Must be a positive integer.
+    W_h_r : int
+        Number of antenna elements in the Uniform Linear Array (ULA) at the receiver.
+        Must be a positive integer.
+    m : float
+    Nakagami fading parameter (shape parameter). Must satisfy m ≥ 0.5.
+    - m = 0.5: Represents one-sided Gaussian fading (severe fading)
+    - m = 1: Equivalent to Rayleigh fading
+    - m > 1: Represents less severe fading than Rayleigh
+    - m → ∞: Approaches no fading (AWGN channel)
+    lambda_h : float
+        Carrier wavelength in meters. Automatically computes reference path loss.
+    numpy_generator : np.random._generator.Generator
+        NumPy random number generator instance used to draw random values.
+        Ensures reproducibility when seeded appropriately.
+    additional_loss_dB : float, optional
+        Additional loss in dB (e.g., for obstacles, penetration loss).
+        - Light foliage: 5-10 dB
+        - Concrete wall: 10-15 dB
+        - Building penetration: 20-30 dB
+        Default is 0.0 dB.
+    
+    Returns
+    -------
+    np.ndarray
+        Channel matrix with realistic frequency-dependent path loss.
+    
+    Raises
+    ------
+    ValueError
+        If the fading parameter m is less than 0.5.
+
+    References
+    ----------
+    - Nakagami, M. (1960). "The m-Distribution—A General Formula of Intensity 
+      Distribution of Rapid Fading". Statistical Methods in Radio Wave Propagation.
+    - Simon, M. K., & Alouini, M. S. (2005). Digital Communication over Fading 
+      Channels. Wiley-IEEE Press.
+
+    Examples
+    --------
+    >>> # 3.5 GHz, urban scenario
+    >>> lambda_h = 3e8 / 3.5e9  # ≈ 0.086 m
+    >>> h = nakagami_m_fading_channel(
+    ...     tx_pos, rx_pos, 4, 2, m=0.8,
+    ...     lambda_h=lambda_h,
+    ...     path_loss_exponent=4.0,  # Urban
+    ...     additional_loss_dB=10.0,  # Obstruction
+    ...     numpy_generator=rng
+    ... )
+    """
+    if m < 0.5:
+        raise ValueError(f"Nakagami fading parameter m must be ≥ 0.5, got m={m}")
+    
+    # Calculate distance
+    diff = receiver_position - transmitter_position
+    distance = max(np.linalg.norm(diff), 3e-2)
+    
+    # Friis path loss at reference distance
+    reference_loss_dB = 20 * np.log10(4 * np.pi * reference_distance / lambda_h)
+    
+    # Log-distance path loss
+    path_loss_dB = (reference_loss_dB + 
+                   10 * path_loss_exponent * np.log10(distance / reference_distance) +
+                   additional_loss_dB)
+    
+    beta = 10 ** (-path_loss_dB / 10)
+    print(f"the beta is {beta}")
+    # Nakagami-m small-scale fading
+    omega = 1.0
+    amplitudes = np.sqrt(
+        numpy_generator.gamma(shape=m, scale=omega/m, size=(W_h_r, W_h_t))
+    )
+    phases = numpy_generator.uniform(0, 2*np.pi, size=(W_h_r, W_h_t))
+    h_small_scale = amplitudes * np.exp(1j * phases)
+    
+    # Complete channel
+    h_complete = np.sqrt(beta) * h_small_scale
+    
+    return h_complete
+
+
 # ?  ----------------------------------------------     FUNCTIONS TO COMPUTE THE GAMMA TERMS FOR SINR CALCULATION    --------------------------------------------------------------
 
 
@@ -183,55 +262,94 @@ def Gamma_Downlink_k(k, K, W, WWH, Theta_Phi, Phi_H_Theta_H,
               gains_transmitter_ris_receiver, H_BS_RIS_UEk_channel,
               H_BS_RIS, H_RIS_Users, kappa_S_d,
               H_Users_RIS, P_users, kappa_B_u_i, rho, sigma_k_squared,
-              use_inter_user_interferences: bool = True):
+              use_inter_user_interferences: bool = True, use_nlos: bool = False,
+              H_BS_Users = None):
     """Vectorized version of Gamma_B_k function."""
     # Calculate all indices except k
     indices_except_k = np.arange(K)[np.arange(K) != k]
     gain_scale = np.sqrt(gains_transmitter_ris_receiver[k])
     # RIS term : (N_rx, M) @ (M, M) @ (M, N_tx) -> (N_rx, N_tx), Si l'utilisateur est mono-antenne, N_rx = 1.
-    H_eff_k = gain_scale * H_BS_RIS_UEk_channel # Complete effective canal for user k
+    H_los_eff_k = gain_scale * H_BS_RIS_UEk_channel # Complete effective canal for user k in LoS case.
 
-    # First term: Inter-user interference - VECTORIZED
-    if len(indices_except_k) > 0 and use_inter_user_interferences:
-        #! New method (implemented on 19/01/2026 to solve the interference issue)
-        W_other = W[:, indices_except_k] # Matrice des précodeurs interférents (N_tx, K-1)
-        # On projette tous les interférents à travers le canal effectif en une seule opération matricielle
-        received_interference_matrix = H_eff_k @ W_other # Résultat : (N_rx, K-1)
-        # La puissance totale d'interférence est la somme des énergies de chaque colonne
-        inter_user_interference_term = np.linalg.norm(received_interference_matrix) ** 2
-    else:
-        inter_user_interference_term = 1.1 * sigma_k_squared 
+    if not use_nlos:
+        # First term: Inter-user interference - VECTORIZED
+        if len(indices_except_k) > 0 and use_inter_user_interferences:
+            #! New method (implemented on 19/01/2026 to solve the interference issue)
+            W_other = W[:, indices_except_k] # Matrice des précodeurs interférents (N_tx, K-1)
+            # On projette tous les interférents à travers le canal effectif en une seule opération matricielle
+            received_interference_matrix = H_los_eff_k @ W_other # Résultat : (N_rx, K-1)
+            # La puissance totale d'interférence est la somme des énergies de chaque colonne
+            inter_user_interference_term = np.linalg.norm(received_interference_matrix) ** 2
+        else:
+            inter_user_interference_term = 1.1 * sigma_k_squared 
 
-    # Third term: User-induced interference - VECTORIZED, For all users except k
-    if len(indices_except_k) > 0:
-        H_Users_RIS_except_k = H_Users_RIS[indices_except_k]  # Shape: (K-1, M, 1)
-        P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+        # Third term: User-induced interference - VECTORIZED, For all users except k
+        if len(indices_except_k) > 0:
+            H_Users_RIS_except_k = H_Users_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+            P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+            
+            # Compute all user channels at once - FIXED DIMENSIONS
+            # H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T
+            # H_Users_RIS[k].T: (1, M), Theta_Phi: (M, M), H_Users_RIS_except_k.squeeze(axis=2).T: (M, K-1)
+            user_channels = gain_scale * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+            user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
+        else:
+            user_interference_not_k = 0
+
+        # For user k
+        user_k_channel = gain_scale * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
+        user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
         
-        # Compute all user channels at once - FIXED DIMENSIONS
-        # H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T
-        # H_Users_RIS[k].T: (1, M), Theta_Phi: (M, M), H_Users_RIS_except_k.squeeze(axis=2).T: (M, K-1)
-        user_channels = gain_scale * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
-        user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
+        # Total user interference
+        user_interference_term = user_interference_not_k + user_interference_k 
+
+        # Second term: Distortion noise caused by BS
+        #diag_matrix = np.diag(np.diag(WWH)).real
+        distortion_term = 0
+        #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
+        # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
+        #distortion_term = (kappa_S_d * H_BS_RIS_UEk_channel @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
+        
+        # Noise term
+        sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
+    
     else:
-        user_interference_not_k = 0
+        h_nlos_eff_k = H_BS_Users[k]
+        # First term: Inter-user interference - VECTORIZED
+        if len(indices_except_k) > 0 and use_inter_user_interferences:
+            W_other = W[:, indices_except_k] 
+            received_interference_matrix = H_los_eff_k @ W_other + h_nlos_eff_k @ W_other 
+            inter_user_interference_term = np.linalg.norm(received_interference_matrix) ** 2
+        else:
+            inter_user_interference_term = 1.1 * sigma_k_squared 
 
-    # For user k
-    user_k_channel = gain_scale * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
-    user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
-    
-    # Total user interference
-    user_interference_term = user_interference_not_k + user_interference_k 
+        # Third term: User-induced interference - VECTORIZED, For all users except k
+        if len(indices_except_k) > 0:
+            H_Users_RIS_except_k = H_Users_RIS[indices_except_k]  # Shape: (K-1, M, 1)
+            P_users_except_k = P_users[indices_except_k]  # Shape: (K-1,)
+            # Compute all user channels at once - FIXED DIMENSIONS
+            user_channels = gain_scale * H_Users_RIS[k].T @ Theta_Phi @ H_Users_RIS_except_k.squeeze(axis=2).T  # Shape: (1, K-1)
+            user_interference_not_k = np.sum((1 + kappa_B_u_i) * rho * P_users_except_k * np.abs(user_channels)**2)
+        else:
+            user_interference_not_k = 0
 
-    # Second term: Distortion noise caused by BS
-    #diag_matrix = np.diag(np.diag(WWH)).real
-    distortion_term = 0
-    #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
-    # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
-    #distortion_term = (kappa_S_d * H_BS_RIS_UEk_channel @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
-    
-    # Noise term
-    sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
-    
+        # For user k
+        user_k_channel = gain_scale * H_Users_RIS[k].conj().T @ Theta_Phi @ H_Users_RIS[k]
+        user_interference_k = (1 + kappa_B_u_i) * P_users[k] * np.abs(user_k_channel)**2
+        
+        # Total user interference
+        user_interference_term = user_interference_not_k + user_interference_k 
+
+        # Second term: Distortion noise caused by BS
+        #diag_matrix = np.diag(np.diag(WWH)).real
+        distortion_term = 0
+        #! Put to 0 because it disturbs a lot the learning. Need to be investigated to check if the issue is on the learning or the physics part.
+        # TODO: Verify This term later on if we want to bring back the distortion term. Let's keep it simple for the moment
+        #distortion_term = (kappa_S_d * H_BS_RIS_UEk_channel @ diag_matrix @ H_BS_RIS.conj().T @ Phi_H_Theta_H @ H_RIS_Users[k].conj().T).real
+        
+        # Noise term
+        sigma_noise_term = 1.1 * sigma_k_squared #TODO: what values for sigma_k_squared
+
     return np.squeeze(inter_user_interference_term + sigma_noise_term) #+ distortion_term + user_interference_term)
 
 
