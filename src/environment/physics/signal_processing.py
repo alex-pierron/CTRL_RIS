@@ -240,7 +240,7 @@ def nakagami_m_fading_channel(transmitter_position: np.ndarray,
                    additional_loss_dB)
     
     beta = 10 ** (-path_loss_dB / 10)
-    print(f"the beta is {beta}")
+    #print(f"the beta is {beta}")
     # Nakagami-m small-scale fading
     omega = 1.0
     amplitudes = np.sqrt(

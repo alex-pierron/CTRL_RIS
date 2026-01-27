@@ -916,7 +916,7 @@ class RIS_Duplex(gym.Env):
                     reference_distance=self.nlos_reference_distance,
                     additional_loss_dB=self.nlos_additional_loss_dB
                 ) for k in range(self.K)
-            ])  # Shape: (K, 1, M)
+            ])  # Shape: (K, 1, N_t)
 
         # Draw the first phase noise matrix
         self.phases = self.numpy_rng.uniform(-90, 90, self._M)
@@ -1103,7 +1103,7 @@ class RIS_Duplex(gym.Env):
                             RIS_position = self._RIS_position,
                         RIS_Cells = self.M,
                         lambda_h=self._lambda_h,) for eavesdropper in range(self._num_eavesdroppers) ])
-            
+
             # Cache the gains and positions for next time
             self._cached_gains = self._gains_transmitter_ris_receiver.copy()
             self._last_user_positions = self.users_positions.copy()
@@ -1123,6 +1123,21 @@ class RIS_Duplex(gym.Env):
                     numpy_generator=self.numpy_rng, 
                 ))  # Shape: (1, M)
 
+
+        if self.use_nlos and self.eavesdropper_active:
+            self._channel_matrices["H_BS_Eaves"] = np.array([
+                nakagami_m_fading_channel(
+                transmitter_position=self._BS_position,
+                receiver_position = self.eavesdroppers_positions[l],
+                W_h_t = self.N_t, W_h_r=1,
+                m = self.nakagami_m,
+                lambda_h = self._lambda_h,
+                numpy_generator = self.numpy_rng,
+                path_loss_exponent = self.nlos_path_loss_exponent,
+                reference_distance = self.nlos_reference_distance,
+                additional_loss_dB = self.nlos_additional_loss_dB
+            ) for l in range(self._num_eavesdroppers)
+            ]) # Shape: (L, 1, N_t)
 
         # Compute RIS -> Users channels using list comprehension
         self._channel_matrices["H_RIS_Users"] = np.array([
@@ -1528,10 +1543,10 @@ class RIS_Duplex(gym.Env):
 
             # legitimate_signal = H_eff_k @ w_k
             # Puissance = || H_eff_k @ w_k ||^2
-            w_k = self._W[:, k].reshape(-1, 1) # Beamformer de l'utilisateur k
+            w_k = self._W[:, k] #.reshape(-1, 1) # Beamformer de l'utilisateur k
 
             if self.use_nlos:
-                H_BS_Users =self._channel_matrices["H_BS_Users"] # Shape: (K, 1, N) 
+                H_BS_Users = self._channel_matrices["H_BS_Users"] # Shape: (K, 1, N) 
                 received_legitimate_signal_vector = H_eff_k @ w_k + H_BS_Users[k] @ w_k
                 #print(np.linalg.norm(H_eff_k) ** 2, np.linalg.norm(H_BS_Users) ** 2)
                 legitimate_signal = np.linalg.norm(received_legitimate_signal_vector) ** 2
@@ -1746,37 +1761,69 @@ class RIS_Duplex(gym.Env):
             return
         self.sinr_eavesdropper_downlink = np.zeros((self.K, self._num_eavesdroppers))
         for k in range(self.K):
-            w_k = self._W[:, k].reshape(-1, 1)
+            w_k = self._W[:, k]
             for l in range(self._num_eavesdroppers):
                 # Direct signal power received at eavesdropper l for user k
-                signal_power_at_eaves = np.squeeze(
-                    np.abs(
-                        np.sqrt(self._gains_transmitter_ris_receiver[self.K + l])
-                        * self._channel_matrices["H_RIS_Eaves_downlink"][l]
-                        @ self._Theta_Phi
-                        @ self._channel_matrices["H_BS_RIS"]
-                        @ w_k
+                if self.use_nlos:
+                    signal_power_at_eaves = np.squeeze(
+                        np.abs(
+                            np.sqrt(self._gains_transmitter_ris_receiver[self.K + l])
+                            * self._channel_matrices["H_RIS_Eaves_downlink"][l]
+                            @ self._Theta_Phi
+                            @ self._channel_matrices["H_BS_RIS"]
+                            @ w_k + self._channel_matrices["H_BS_Eaves"][l] @ w_k
+                        )
+                        ** 2
                     )
-                    ** 2
-                )
-                # Interference plus noise at eavesdropper l for user k
-                interference_plus_noise = Gamma_E_d_k_l(
-                    k,
-                    l,
-                    self._W,
-                    self._Theta_Phi,
-                    self.Phi_H_Theta_H,
-                    self.diag_matrix_WWH,
-                    self._gains_transmitter_ris_receiver,
-                    self._channel_matrices["H_BS_RIS"],
-                    self._channel_matrices["H_RIS_Eaves_downlink"],
-                    self.kappa[-1],
-                    self._channel_matrices["H_Users_RIS"],
-                    self._channel_matrices["H_RIS_Eaves_uplink"],
-                    self.P_users,
-                    self.kappa[0],
-                    self.mu_d_l_squared,
-                )
+                    # Interference plus noise at eavesdropper l for user k
+                    interference_plus_noise = Gamma_E_d_k_l(
+                        k,
+                        l,
+                        self._W,
+                        self._Theta_Phi,
+                        self.Phi_H_Theta_H,
+                        self.diag_matrix_WWH,
+                        self._gains_transmitter_ris_receiver,
+                        self._channel_matrices["H_BS_RIS"],
+                        self._channel_matrices["H_RIS_Eaves_downlink"],
+                        self.kappa[-1],
+                        self._channel_matrices["H_Users_RIS"],
+                        self._channel_matrices["H_RIS_Eaves_uplink"],
+                        self.P_users,
+                        self.kappa[0],
+                        self.mu_d_l_squared,
+
+                    )
+
+                else:
+                    signal_power_at_eaves = np.squeeze(
+                        np.abs(
+                            np.sqrt(self._gains_transmitter_ris_receiver[self.K + l])
+                            * self._channel_matrices["H_RIS_Eaves_downlink"][l]
+                            @ self._Theta_Phi
+                            @ self._channel_matrices["H_BS_RIS"]
+                            @ w_k 
+                        )
+                        ** 2
+                    )
+                    # Interference plus noise at eavesdropper l for user k
+                    interference_plus_noise = Gamma_E_d_k_l(
+                        k,
+                        l,
+                        self._W,
+                        self._Theta_Phi,
+                        self.Phi_H_Theta_H,
+                        self.diag_matrix_WWH,
+                        self._gains_transmitter_ris_receiver,
+                        self._channel_matrices["H_BS_RIS"],
+                        self._channel_matrices["H_RIS_Eaves_downlink"],
+                        self.kappa[-1],
+                        self._channel_matrices["H_Users_RIS"],
+                        self._channel_matrices["H_RIS_Eaves_uplink"],
+                        self.P_users,
+                        self.kappa[0],
+                        self.mu_d_l_squared,
+                    )
                 
                 # Compute SINR
                 sinr_ratio = signal_power_at_eaves / interference_plus_noise
@@ -2080,9 +2127,64 @@ class RIS_Duplex(gym.Env):
         if sum_squares == 0:
             return round(1/self.K,ndigits=4)  
         jain_index = (sum_rewards ** 2) / (self.K * sum_squares)
-        #jain_index = (np.min(self.basic_reward_per_user) / np.max(self.basic_reward_per_user))
         return round(jain_index,ndigits=4) 
          
+    def min_max_fairness(self, fairness_power : int = 1):
+        if not self.basic_reward_per_user.size:
+             return np.finfo().eps   
+        min_max_index = (np.min(self.basic_reward_per_user) / np.max(self.basic_reward_per_user)) ** fairness_power
+        return round(min_max_index,ndigits=4) 
+
+    def gini_fairness(self):
+        """
+        Computes fairness based on the Gini coefficient.
+        The returned value is 1 - Gini, so higher is fairer.
+        """
+        if not self.basic_reward_per_user.size:
+            return 0.0
+        rewards = np.sort(self.basic_reward_per_user)
+        n = self.K
+        if np.sum(rewards) == 0:
+            return 0.0
+        index = np.arange(1, n + 1)
+        gini = (2 * np.sum(index * rewards)) / (n * np.sum(rewards)) - (n + 1) / n
+        fairness = 1 - gini
+        return round(fairness, ndigits=4)
+    
+    def entropy_fairness(self):
+        """
+        Computes normalized entropy-based fairness.
+        Maximum fairness is 1 when rewards are equally distributed.
+        """
+        if not self.basic_reward_per_user.size:
+            return 0.0
+        rewards = self.basic_reward_per_user
+        total = np.sum(rewards)
+        if total == 0:
+            return 0.0
+        probabilities = rewards / total
+        entropy = -np.sum(probabilities * np.log(probabilities + np.finfo(float).eps))
+        max_entropy = np.log(self.K)
+        fairness = entropy / max_entropy
+        return round(fairness, ndigits=4)
+
+    def proportional_fairness(self):
+        """
+        Computes proportional fairness using logarithmic utility.
+        """
+        if not self.basic_reward_per_user.size:
+            return 0.0
+
+        rewards = self.basic_reward_per_user
+
+        if np.any(rewards <= 0):
+            return 0.0
+
+        utility = np.sum(np.log(rewards))
+        max_utility = self.K * np.log(np.mean(rewards))
+
+        fairness = utility / max_utility
+        return round(fairness, ndigits=4)
 
     def compute_all_fairness(self):
         self.current_fairness_values = {}
