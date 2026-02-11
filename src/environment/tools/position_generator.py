@@ -1,21 +1,21 @@
+"""Position generation utilities for users and eavesdroppers.
+
+This module is consumed by `RIS_Duplex.reset()` and can be constrained by
+curriculum difficulty payloads coming from `TaskManager`.
+"""
+
 import numpy as np
 from copy import deepcopy
+from src.environment.tools.task_manager import EpisodeDifficultyConfig
 
 class PositionGenerator:
-    """
-    A class used to generate random 2D positions for users within specified x and y limits.
+    """Generate user/eavesdropper 2D positions under geometric constraints.
 
-    Attributes
-    ----------
-    grid_limits : np.ndarray
-        A 2D numpy array containing the x and y limits for user positions, in the form [[x_min, x_max], [y_min, y_max]].
-    
-    Methods
-    -------
-    random_point_in_area(limits)
-        Generates a random point within the area defined by the given limits.
-    generate_random__users_positions(self.num_users, L)
-        Generates random positions for self.num_users users within their respective areas.
+    Interface contract with curriculum learning:
+    - `update_generation_condition(...)` applies one episode difficulty payload.
+    - `generate_new_users_positions()` samples positions under angle/grid constraints.
+    - `generate_new_eavesdroppers_positions(...)` samples under min/max distance
+      constraints to user positions.
     """
 
     def __init__(self,
@@ -61,24 +61,16 @@ class PositionGenerator:
         # Initialize y_axis_upper_limit_aligned
         self.y_axis_upper_limit_aligned = (self.grid_limits[1][1] - self.RIS_position[1] == 0)
 
-    def update_generation_condition(self,new_user_limits,
-                                    is_angle_given_a_max, 
-                                    new_angle_difference_between_user, 
-                                    new_min_distance_between_eavesdropper_and_users,
-                                    new_max_distance_between_eavesdropper_and_users,
-                                    is_positioning_fully_random):
-        """
-        Updates the generation conditions for angle difference and distance.
-        
-        Parameters
-        ----------
-        new_user_limits : np.array
-            2D limits in which the new positions can be sampled. Format is [ [x_min, x_max], [y_min, y_max] ].
-        new_angle_difference_between_user : float
-            New angle difference to have in radians when substracting the angles with the RIS for two users.
-        new_min_distance_between_user : float
-            New minimum distance between users.
-        """
+    def _apply_generation_constraints(
+        self,
+        new_user_limits,
+        is_angle_given_a_max,
+        new_angle_difference_between_user,
+        new_min_distance_between_eavesdropper_and_users,
+        new_max_distance_between_eavesdropper_and_users,
+        is_positioning_fully_random,
+    ):
+        """Apply low-level generation constraints to internal state."""
         self.grid_limits = new_user_limits
         self.angle_difference_between_user = new_angle_difference_between_user
         self.angle_is_max = is_angle_given_a_max
@@ -94,12 +86,51 @@ class PositionGenerator:
 
         self._intermediate_angle_toward_max = -np.arctan((self.RIS_position[1]-self.grid_limits[1,0])/(self.grid_limits[0,1]-self.RIS_position[0]))
 
-        self.y_axis_upper_limit_aligned = (self.grid_limits[1][1] - self.RIS_position[1] ==0)
+        self.y_axis_upper_limit_aligned = np.isclose(self.grid_limits[1][1] - self.RIS_position[1], 0.0)
+
+    def apply_episode_difficulty_config(self, difficulty_config):
+        """Apply one episode curriculum payload.
+
+        Args:
+            difficulty_config: explicit `EpisodeDifficultyConfig`, a legacy tuple
+                `(grid_limits, angle_is_max, angle_value, min_eaves_dist,
+                max_eaves_dist, fully_random)`, or a compatible mapping/object.
+        """
+        config = EpisodeDifficultyConfig.from_any(difficulty_config)
+        self._apply_generation_constraints(*config.as_position_generator_args())
+
+    def update_generation_condition(self,new_user_limits,
+                                    is_angle_given_a_max, 
+                                    new_angle_difference_between_user, 
+                                    new_min_distance_between_eavesdropper_and_users,
+                                    new_max_distance_between_eavesdropper_and_users,
+                                    is_positioning_fully_random):
+        """Backward-compatible API to update generation constraints.
+
+        Note:
+            `is_angle_given_a_max` is preserved for compatibility with the
+            difficulty configuration schema. Current angle sampling logic does
+            not branch on this flag.
+        """
+        self._apply_generation_constraints(
+            new_user_limits,
+            is_angle_given_a_max,
+            new_angle_difference_between_user,
+            new_min_distance_between_eavesdropper_and_users,
+            new_max_distance_between_eavesdropper_and_users,
+            is_positioning_fully_random,
+        )
 
     def generate_new_users_positions(self):
-        """
-        Generate self.num_users user positions around RIS with angular constraints.
-        Positions and angles are rounded to 0.1 precision.
+        """Generate user positions under current curriculum constraints.
+
+        Returns:
+            np.ndarray: Array of shape `(num_users, 2)` rounded to 0.1.
+
+        Notes:
+            - If `fully_random_positioning` is enabled, this method delegates to
+              `generate_random_users_positions()`.
+            - Multiple guarded fallbacks are used to avoid reset-time failures.
         """
         # Determine sampling strategy
 
@@ -350,23 +381,19 @@ class PositionGenerator:
             ])
     
     def generate_new_eavesdroppers_positions(self, users_positions):
-        """
-        Generate positions for eavesdroppers based on user positions, ensuring that the distance 
-        between each eavesdropper and all users is superior to self.min_distance_eavesdropper_users. 
-        It also ensures that the distance between each eavesdropper and the closest user is inferior 
-        to self.max_distance_eavesdropper_users. Finally the eavesdropper positions have to have 
-        their x coordinate and y coordinate inside the lower and upper bounds given by self.grid_limits.
-        Finally eavesdroppers positions are rounded to 0.1 precision.
-        
-        Parameters
-        ----------
-        users_positions : np.ndarray
-            Array of shape (num_users, 2) containing user positions
-        
-        Returns
-        -------
-        np.ndarray
-            Array of shape (self.num_eavesdroppers, 2) containing eavesdropper positions
+        """Generate eavesdropper positions under distance and bounds constraints.
+
+        Args:
+            users_positions: User coordinates with shape `(num_users, 2)`.
+
+        Returns:
+            np.ndarray: Eavesdropper coordinates with shape
+            `(num_eavesdroppers, 2)`, rounded to 0.1.
+
+        Invariants:
+            - Coordinates remain inside `grid_limits`.
+            - Distance to every user is `>= min_distance_eavesdropper_users`.
+            - Distance to closest user is `<= max_distance_eavesdropper_users`.
         """
         # Pre-compute values
         x_min, x_max = self.grid_limits[0]

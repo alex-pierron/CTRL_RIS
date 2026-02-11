@@ -36,12 +36,12 @@ import torch
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from .tools import PositionGenerator, select_functions
+from .tools import PositionGenerator, EpisodeDifficultyConfig, select_functions
 from copy import deepcopy
 from .rewards import *
 from .physics import *
 from .mobility import *
-from .ris_modules import ActionProcessor, MetricsTracker, PowerPatternComputer
+from .ris_modules import ActionProcessor, MetricsTracker, PowerPatternComputer, process_raw_actions_numpy
 from time import time as time_for_seed
 
 class RIS_Duplex(gym.Env):
@@ -220,7 +220,7 @@ class RIS_Duplex(gym.Env):
         self.user_position_changing = self.env_config.get('users_position_changing', True)
 
         self.target_secrecy_rate = self.env_config.get('target_secrecy_rate', 1.5)
-        self.target_date_rate = self.env_config.get('target_date_rate', 2.5)
+        self.target_data_rate = self.env_config.get('target_data_rate', 2.5)
 
         self.p_f = self.env_config.get('p_f', 2)
         self.additional_state_info = self.env_config.get('additional_state_info', False)
@@ -301,12 +301,23 @@ class RIS_Duplex(gym.Env):
         self.phase_shift_matrix_action_dim = 2 * self._M
         self._action_dim = 2 * self._M + 2 * self.N_t * self.K
 
-        action_low_bound = -np.inf + np.zeros(self.action_dim)
-        action_low_bound[-2 * self._M: -self._M] = -1
-        action_low_bound[-self._M:] = 0
-        action_high_bound = deepcopy(-action_low_bound)
-        action_high_bound[-self._M:] = 2 * np.pi
-
+        self.test_obs = self.env_config.get('test_obs', False)
+        self.simplified_state = self.env_config.get('simplified_state', False)
+        self.minimal_state = self.env_config.get('minimal_state', False)
+        self.phase_noise_step_std = float(self.env_config.get('phase_noise_step_std', 0.0))
+        self.phase_noise_ar_coeff = float(self.env_config.get('phase_noise_ar_coeff', 0.95))
+        self.channel_refresh_every_n_steps = int(self.env_config.get('channel_refresh_every_n_steps', 0))
+        self.w_action_mapping = self.env_config.get('w_action_mapping', 'projection')
+        # NOTE: The action vector layout is:
+        #   [W_real_0, W_imag_0, W_real_1, W_imag_1, ...,   (2 * N_t * K values)
+        #    Theta_real_0, Theta_imag_0, Theta_real_1, ...]  (2 * M values)
+        # SAC/TD3 apply tanh (→ [-1, 1]) then normalize Theta to unit modulus
+        # and project W via power constraint.
+        
+        # Define action bounds
+        action_low_bound = -np.ones(self.action_dim)   # tanh lower bound
+        action_high_bound = np.ones(self.action_dim)    # tanh upper bound
+        
         self._action_space = spaces.Box(
             low=action_low_bound, high=action_high_bound, shape=(self.action_dim,), dtype=np.float64
         )
@@ -391,8 +402,8 @@ class RIS_Duplex(gym.Env):
         BS_transmit_power_dim = 2 * self.K                # Power per user (real + imag)
         previous_received_power_dim = 2 * self.K          # Previous power per user (real + imag)
 
-        # Total state dimension
-        self._state_dim = (
+        # Total state dimension (default: full state)
+        self._state_dim_default = (
             self.previous_rate_dim +
             cascaded_channel_dim +
             phase_noise_dim +
@@ -401,7 +412,35 @@ class RIS_Duplex(gym.Env):
             previous_received_power_dim
         )
 
-        self._observation_space = spaces.Dict(
+        # Simplified state: physically homogeneous, normalized components
+        # 4 rates + 2K SINR + M phases + action_dim + K power + K received_power
+        self._simplified_rate_dim = 4
+        self._simplified_state_dim = (
+            self._simplified_rate_dim +
+            2 * self.K +  # Downlink + uplink SINR (normalized dB) per user
+            self._M +
+            self.action_dim +
+            self.K +      # BS transmit power per user (normalized)
+            self.K       # Previous received power per user (normalized)
+        )
+
+        # Minimal state: user positions (2K) + previous signal strength per user (K)
+        self._state_dim_minimal = 2 * self.K + self.K
+
+        self._state_dim = (
+            self._state_dim_minimal if self.minimal_state
+            else self._simplified_state_dim if self.simplified_state
+            else self._state_dim_default
+        )
+
+        if self.minimal_state or self.simplified_state:
+            self._observation_space = spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(self._state_dim,),
+                dtype=np.float64
+            )
+        else:
+            self._observation_space = spaces.Dict(
             {
                 "previous rate": spaces.Box(
                     low=-np.inf, high=np.inf, shape=(self.previous_rate_dim,), dtype=np.float64
@@ -422,7 +461,7 @@ class RIS_Duplex(gym.Env):
                     low=0, high=np.inf, shape=(previous_received_power_dim,), dtype=np.float64
                 ),
             }
-        )
+            )
 
         # =====================================================================
         # Runtime counters & ephemeral state
@@ -433,7 +472,9 @@ class RIS_Duplex(gym.Env):
         self._num_episode = 0
         self._num_step = 0
         self.previous_rate_part = np.zeros(self.previous_rate_dim)
-        
+        if self.simplified_state:
+            self._simplified_previous_rate_part = np.zeros(self._simplified_rate_dim)
+
         # =====================================================================
         # Performance optimization caches
         # =====================================================================
@@ -749,35 +790,54 @@ class RIS_Duplex(gym.Env):
     def action_space(self) -> gym.Space:
         """Returns the action space of the environment."""
         return self._action_space
+    
 
     # ============================================================================
     # RESET AND INITIALIZATION
     # ============================================================================
+
+    def _coerce_episode_difficulty_config(self, chosen_difficulty_config):
+        """Normalize curriculum payload to explicit config object.
+
+        Args:
+            chosen_difficulty_config: `None`, explicit dataclass payload, legacy
+                6-item tuple/list payload, or compatible dict/object.
+
+        Returns:
+            EpisodeDifficultyConfig | None
+
+        Raises:
+            ValueError: if the payload format is invalid.
+        """
+        if chosen_difficulty_config is None:
+            return None
+        return EpisodeDifficultyConfig.from_any(chosen_difficulty_config)
 
     def reset(self, seed=None, chosen_difficulty_config=None):
         """Reset environment state at the start of a new episode.
 
         Args:
             seed: Optional RNG seed for this reset.
-            chosen_difficulty_config: Optional curriculum tuple to constrain
-                position generation and scenario difficulty.
+            chosen_difficulty_config: Optional curriculum payload used to update
+                user/eavesdropper generation constraints for this episode.
+
+        Notes:
+            This is the integration point for curriculum learning:
+            `TaskManager.generate_episode_configs()` -> `VecEnv.reset(...)` ->
+            `RIS_Duplex.reset(...)` -> `PositionGenerator.update_generation_condition(...)`.
         """
-        if chosen_difficulty_config is not None:
+        difficulty_config = self._coerce_episode_difficulty_config(chosen_difficulty_config)
+        if difficulty_config is not None:
             # NOTE: Curriculum Learning: update spatial generation constraints
             self.position_generator.update_generation_condition(
-                chosen_difficulty_config[0],
-                chosen_difficulty_config[1],
-                chosen_difficulty_config[2],
-                chosen_difficulty_config[3],
-                chosen_difficulty_config[4],
-                chosen_difficulty_config[5],
+                *difficulty_config.as_position_generator_args()
             )
 
         self._initialize_reset(seed)
 
         # Generate random user positions
         if self.user_position_changing:
-            if chosen_difficulty_config:
+            if difficulty_config is not None:
                 self.users_positions = self.position_generator.generate_new_users_positions()
                 if self.eavesdropper_active and self.eaves_position_changing:
                     self.eavesdroppers_positions = self.position_generator.generate_new_eavesdroppers_positions(
@@ -814,6 +874,8 @@ class RIS_Duplex(gym.Env):
         self.previous_actions = np.zeros(self.action_dim)
         self.previous_G_1D = np.zeros(shape=(self.K, self.K), dtype=complex)
         self.previous_rate_part = np.zeros(self.previous_rate_dim)
+        if self.simplified_state:
+            self._simplified_previous_rate_part = np.zeros(self._simplified_rate_dim)
         self._num_step = 0
 
         # Reset comprehensive information storage to initial state
@@ -919,8 +981,9 @@ class RIS_Duplex(gym.Env):
             ])  # Shape: (K, 1, N_t)
 
         # Draw the first phase noise matrix
-        self.phases = self.numpy_rng.uniform(-90, 90, self._M)
-        self.phases = np.deg2rad((360 + self.phases) % 360)
+        # NOTE: phases are drawn in [-90, 90] degrees and converted to [-π/2, π/2] radians
+        # to match the observation_space bounds declared for phase noise.
+        self.phases = np.deg2rad(self.numpy_rng.uniform(-90, 90, self._M))
         self._Phi = np.diag(np.exp(1j * self.phases))
         self._Theta = np.ones_like(self._Phi)
 
@@ -941,9 +1004,19 @@ class RIS_Duplex(gym.Env):
 
     def compute_theta_phi(self):
         """Update cached products of `Theta` and `Phi` used across formulas."""
+        """self._Theta_Phi, self.Phi_H_Theta_H = ActionProcessor.compute_theta_phi(
+            self._Theta, self._Phi
+        )"""
+        diagonal_elements = np.diag(self._Theta @ self._Phi) 
+        self._Theta_Phi = np.diag(diagonal_elements / np.abs(diagonal_elements)) 
+        """
         self._Theta_Phi, self.Phi_H_Theta_H = ActionProcessor.compute_theta_phi(
             self._Theta, self._Phi
         )
+        """
+        self.Phi_H_Theta_H = self._Phi.conj().T @ self._Theta.conj().T
+        return 
+
 
     def compute_WWH(self):
         """Update cached `W @ W^H` and its diagonal; reused in SINR terms."""
@@ -1242,15 +1315,60 @@ class RIS_Duplex(gym.Env):
     # ============================================================================
 
     def process_raw_actions(self, actor_actions):
-        """Convert raw actor output tensor into `Theta` and `W`.
+        """Convert raw actor output into `Theta` and `W`.
+        
+        Applies constraint processing (unit modulus for Theta, power projection for W)
+        via process_raw_actions_numpy, then converts the flat action vector to matrices.
+        Handles both continuous and discrete action spaces:
+        - Continuous: actions are in [-1, 1] range from tanh (raw) or already constrained
+        - Discrete: actions are indices that need to be converted to continuous values
 
         Args:
             actor_actions (array): Raw output of the model for actions to take.
+                                  For continuous: continuous values in [-1, 1]
+                                  For discrete: discrete indices per action dimension
         """
-        self.current_actions = actor_actions.numpy() if hasattr(actor_actions, 'numpy') else actor_actions
-        self._Theta, self._W = ActionProcessor.process_raw_actions(
-            actor_actions, self.N_t, self.K, self._M
+        # Convert torch tensor to numpy if needed
+        if hasattr(actor_actions, 'numpy'):
+            actor_actions = actor_actions.numpy()
+        
+        # Apply constraint processing (idempotent if already processed)
+        constrained_actions = process_raw_actions_numpy(
+            actor_actions, self.N_t, self.K, self.P_max, w_action_mapping=self.w_action_mapping
         )
+        self.current_actions = constrained_actions
+        self._Theta, self._W = ActionProcessor.process_raw_actions(
+            constrained_actions, self.N_t, self.K, self._M
+        )
+
+    def _update_phase_noise(self):
+        """Update RIS phase-noise process at each step when enabled."""
+        if self.phase_noise_step_std <= 0:
+            return
+        innovation = self.numpy_rng.normal(0.0, self.phase_noise_step_std, size=self._M)
+        self.phases = np.clip(
+            self.phase_noise_ar_coeff * self.phases + innovation,
+            -np.pi / 2,
+            np.pi / 2,
+        )
+        self._Phi = np.diag(np.exp(1j * self.phases))
+        self.compute_theta_phi()
+        if self._uplink_used:
+            self.compute_decoding_matrix()
+
+    def _refresh_channels_if_needed(self):
+        """Optional block-fading refresh for intra-episode dynamics."""
+        if self.channel_refresh_every_n_steps <= 0:
+            return
+        if self._num_step % self.channel_refresh_every_n_steps != 0:
+            return
+        self.compute_all_channels()
+        if self._uplink_used:
+            self.compute_decoding_matrix()
+        # Force cached matrix products to refresh with the new channels.
+        self._last_theta_phi = None
+        self._last_W = None
+        self._cached_matrix_products = {}
 
 
     # ============================================================================
@@ -1307,7 +1425,12 @@ class RIS_Duplex(gym.Env):
                 self.previous_rate_part[1] = np.sum(rates_BS)                # Sum uplink rate
                 self.previous_rate_part[2] = sum_eavesdroppers_rates         # Sum eavesdropper rate
                 self.previous_rate_part[3] = np.sum(np.maximum(0, SSR_terms))  # Sum SSR
-            else:
+            if self.simplified_state:
+                self._simplified_previous_rate_part[0] = np.sum(rates_legitimate_users)
+                self._simplified_previous_rate_part[1] = np.sum(rates_BS)
+                self._simplified_previous_rate_part[2] = sum_eavesdroppers_rates
+                self._simplified_previous_rate_part[3] = np.sum(np.maximum(0, SSR_terms))
+            if self.additional_state_info and not self.simplified_state:
                 # Detailed format: per-user rates + metadata + positions
                 self.previous_rate_part[:self.K] = rates_legitimate_users     # Per-user downlink rates
                 self.previous_rate_part[self.K:2*self.K] = rates_BS           # Per-user uplink rates
@@ -1319,6 +1442,130 @@ class RIS_Duplex(gym.Env):
 
         pass
 
+    def _get_minimal_state(self):
+        """Build minimal state with only user positions and previous signal strength per user.
+
+        Structure:
+        1. User positions (2K): (x, y) for each user, normalized to [0, 1] by grid size
+        2. Previous signal strength (K): received power per user from t-1, normalized to [0, 1]
+
+        Returns:
+            numpy.ndarray: State vector of dimension self.state_dim
+        """
+        # Compute G_1D for received power and for previous_G_1D update
+        h_d = self.channel_matrices["H_RIS_Users"].squeeze(axis=1)
+        G_1D = h_d @ self._Theta_Phi @ self.channel_matrices["H_BS_RIS"] @ self._W
+
+        state = np.zeros(self._state_dim)
+        idx = 0
+
+        # Normalization for positions: use grid size (x by size[0], y by size[1])
+        size = np.array(self.size, dtype=np.float64)
+        if np.any(size <= 0):
+            size = np.array([200.0, 200.0])
+
+        # Part 1: User positions (2K values, normalized to [0, 1])
+        positions = np.array(self.users_positions)
+        positions_norm = np.zeros(2 * self.K)
+        positions_norm[0::2] = np.clip(positions[:, 0] / size[0], 0.0, 1.0)
+        positions_norm[1::2] = np.clip(positions[:, 1] / size[1], 0.0, 1.0)
+        state[idx:idx + 2 * self.K] = positions_norm
+        idx += 2 * self.K
+
+        # Part 2: Previous signal strength per user (K values, normalized to [0, 1])
+        power_per_user_ref = self.P_max / max(1, self.K)
+        real_G = np.real(self.previous_G_1D)
+        imag_G = np.imag(self.previous_G_1D)
+        g_power = np.sum(real_G**2 + imag_G**2, axis=0)
+        g_ref = max(power_per_user_ref * 0.1, 1e-12)
+        g_power_norm = np.clip(g_power / g_ref, 0.0, 1.0)
+        state[idx:idx + self.K] = g_power_norm
+        idx += self.K
+
+        self.previous_G_1D = G_1D.copy()
+        return state
+
+    def _get_simplified_state(self):
+        """Build simplified state with physically homogeneous, normalized components.
+
+        All values are normalized to comparable ranges (~[0,1] or [-1,1]) for
+        stable neural network training. Structure:
+        1. Previous rates (4): normalized by max_rate_ref
+        2. SINR downlink + uplink (2K): dB normalized to [0,1]
+        3. Phases (M): radians normalized to [-1, 1]
+        4. Previous actions (action_dim): already [-1, 1]
+        5. BS transmit power (K): normalized by P_max/K
+        6. Previous received power (K): normalized by reference
+
+        Returns:
+            numpy.ndarray: State vector of dimension self.state_dim
+        """
+        # Compute G_1D for received power and for previous_G_1D update
+        h_d = self.channel_matrices["H_RIS_Users"].squeeze(axis=1)
+        G_1D = h_d @ self._Theta_Phi @ self.channel_matrices["H_BS_RIS"] @ self._W
+
+        state = np.zeros(self._state_dim)
+        idx = 0
+
+        # Normalization references (homogeneous scaling)
+        max_rate_ref = max(50.0, 15.0 * self.K)
+        sinr_dB_min, sinr_dB_max = -20.0, 30.0
+        sinr_dB_range = sinr_dB_max - sinr_dB_min
+        power_per_user_ref = self.P_max / max(1, self.K)
+
+        # Part 1: Previous rates (4 values, normalized to [0, 1])
+        rates_norm = np.clip(
+            self._simplified_previous_rate_part / max_rate_ref, 0.0, 1.0
+        )
+        state[idx:idx + self._simplified_rate_dim] = rates_norm
+        idx += self._simplified_rate_dim
+
+        # Part 2: Current SINR in dB (2K values, normalized to [0, 1])
+        sinr_dl_linear = np.maximum(self.sinr_downlink_users, 1e-10)
+        sinr_dl_dB = 10.0 * np.log10(sinr_dl_linear)
+        sinr_dl_norm = np.clip(
+            (sinr_dl_dB - sinr_dB_min) / sinr_dB_range, 0.0, 1.0
+        )
+        state[idx:idx + self.K] = sinr_dl_norm
+        idx += self.K
+
+        sinr_ul_linear = np.maximum(self.sinr_uplink_users, 1e-10)
+        sinr_ul_dB = 10.0 * np.log10(sinr_ul_linear)
+        sinr_ul_norm = np.clip(
+            (sinr_ul_dB - sinr_dB_min) / sinr_dB_range, 0.0, 1.0
+        )
+        state[idx:idx + self.K] = sinr_ul_norm
+        idx += self.K
+
+        # Part 3: Phases (M values, normalized to [-1, 1])
+        phases_norm = np.clip(self.phases / (np.pi / 2.0), -1.0, 1.0)
+        state[idx:idx + self._M] = phases_norm
+        idx += self._M
+
+        # Part 4: Previous actions (already in [-1, 1])
+        state[idx:idx + self.action_dim] = self.previous_actions
+        idx += self.action_dim
+
+        # Part 5: BS transmit power (K values, normalized by P_max/K)
+        w_conj = self._W.conj().T
+        products = np.einsum('ij,jk->ik', w_conj, self._W)
+        products_diag = np.diag(products)
+        w_power = np.real(products_diag)
+        w_power_norm = np.clip(w_power / power_per_user_ref, 0.0, 1.0)
+        state[idx:idx + self.K] = w_power_norm
+        idx += self.K
+
+        # Part 6: Previous received power (K values, normalized)
+        real_G = np.real(self.previous_G_1D)
+        imag_G = np.imag(self.previous_G_1D)
+        g_power = np.sum(real_G**2 + imag_G**2, axis=0)
+        g_ref = max(power_per_user_ref * 0.1, 1e-12)
+        g_power_norm = np.clip(g_power / g_ref, 0.0, 1.0)
+        state[idx:idx + self.K] = g_power_norm
+        idx += self.K
+
+        self.previous_G_1D = G_1D.copy()
+        return state
 
     def get_state(self):
         """Generate the observation state for the environment at the current time slot.
@@ -1336,10 +1583,17 @@ class RIS_Duplex(gym.Env):
         """
         # Cache matrix products for efficiency before state construction
         self._cache_matrix_products()
-        
         state = np.zeros(self.state_dim)
+        if self.test_obs:
+            state = np.zeros(self.state_dim)
+            return state
+        if self.minimal_state:
+            return self._get_minimal_state()
+        if self.simplified_state:
+            return self._get_simplified_state()
+
         idx = 0  # Current index in state vector
-        
+
         # ------------------------------------------------------------------------
         # Part 1: Previous rate information (from t-1 time slot)
         # ------------------------------------------------------------------------
@@ -1350,7 +1604,8 @@ class RIS_Duplex(gym.Env):
         # Part 2: Cascaded channel information (at t-th time slot)
         # ------------------------------------------------------------------------
         # 2a. BS-RIS-Users downlink channel (G_1D): Shape (K, K)
-        G_1D = self._cached_matrix_products["G_1D"]
+        h_d = self.channel_matrices["H_RIS_Users"].squeeze(axis=1)  # Shape: (K,M)
+        G_1D = h_d @ self._Theta_Phi @ self.channel_matrices["H_BS_RIS"] @ self._W
         G_1D_flat = G_1D.flatten()
         state[idx:idx + self.K * self.K] = np.real(G_1D_flat)
         idx += self.K * self.K
@@ -1359,7 +1614,8 @@ class RIS_Duplex(gym.Env):
 
         # 2b. BS-RIS-Eavesdroppers downlink channel (G_2D): Shape (L, K) if active
         if self.eavesdropper_active:
-            G_2D = self._cached_matrix_products["BS_RIS_EAVES"]
+            G_2D = self.channel_matrices["H_RIS_Eaves_downlink"].squeeze(axis=1)  # Shape: (L, M)
+            G_2D = G_2D @ self._Theta_Phi @ self.channel_matrices["H_BS_RIS"] @ self._W
             G_2D_flat = G_2D.flatten()
             state[idx:idx + self.K * self._num_eavesdroppers] = np.real(G_2D_flat)
             idx += self.K * self._num_eavesdroppers
@@ -1372,7 +1628,8 @@ class RIS_Duplex(gym.Env):
         
         # 2c. Users-RIS-BS uplink channel (G_1U): Shape (N_r, K) if uplink active
         if self._uplink_used:
-            G_1U = self._cached_matrix_products["LU_BS_RIS"]
+            h_u = self.channel_matrices["H_Users_RIS"].squeeze(axis=2).T  # Shape: (M, K)
+            G_1U = self.channel_matrices["H_RIS_BS"] @ self._Theta_Phi @ h_u
             G_1U_flat = G_1U.flatten()
             state[idx:idx + self.N_r * self.K] = np.real(G_1U_flat)
             idx += self.N_r * self.K
@@ -1385,7 +1642,8 @@ class RIS_Duplex(gym.Env):
 
         # 2d. Users-RIS-Eavesdroppers uplink channel (G_2U): Shape (L, K) if both active
         if self.eavesdropper_active and self._uplink_used:
-            G_2U = self._cached_matrix_products["LU_BS_EAVES"]
+            g_u = self.channel_matrices["H_RIS_Eaves_uplink"].squeeze(axis=1)  # Shape: (L, M)
+            G_2U = g_u @ self._Theta_Phi @ h_u
             G_2U_flat = G_2U.flatten()
             state[idx:idx + self._num_eavesdroppers * self.K] = np.real(G_2U_flat)
             idx += self._num_eavesdroppers * self.K
@@ -1456,6 +1714,8 @@ class RIS_Duplex(gym.Env):
         self.compute_previous_rate_part()
         #* Transition the environment by updating all terms impacted by the change of Theta and W
         self.transitioning(new_actions)
+        self._update_phase_noise()
+        self._refresh_channels_if_needed()
         self.compute_new_SINRs()
         self.compute_reward()
         self.previous_actions = new_actions
@@ -1637,7 +1897,12 @@ class RIS_Duplex(gym.Env):
         H_RIS_BS = self._channel_matrices["H_RIS_BS"]
         H_Users_RIS = self._channel_matrices["H_Users_RIS"]
         gains = self._gains_transmitter_ris_receiver
-        H_Users_BS =self._channel_matrices["H_BS_Users"] # Shape: (K, N, 1)
+        
+        # H_Users_BS only exists if use_nlos is True
+        # Currently not used in uplink SINR calculations but kept for future extensions
+        if self.use_nlos:
+            H_Users_BS = self._channel_matrices["H_BS_Users"]  # Shape: (K, N, 1)
+        
         for k in range(self.K):
             # If user has no transmit power, SINR is zero
             if self.P_users[k] == 0:
@@ -2059,7 +2324,7 @@ class RIS_Duplex(gym.Env):
                 reward_per_user, total_reward = reward_function(
                     self.K, self._num_eavesdroppers,self.mu_1,self.mu_2,
                     self.target_secrecy_rate,
-                    self.target_date_rate,
+                    self.target_data_rate,
                     self.sinr_downlink_users, self.sinr_uplink_users,
                     self.SINR_Eavesdropper_Downlink_k_l, self.SINR_Eavesdropper_Uplink_k_l,
                     self.eavesdropper_active

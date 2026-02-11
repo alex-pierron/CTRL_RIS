@@ -1,6 +1,5 @@
 import numpy as np
 
-from .jain_fairness import user_jain_fairness
 
 def R_k_minmax_smoothed(k: int, L: int, SINR_D_k, SINR_U_k, SINR_E_d_k_l, SINR_E_u_k_l,
              eavesdropper_active: bool,):

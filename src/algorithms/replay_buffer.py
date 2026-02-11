@@ -220,8 +220,8 @@ class SumTree:
                 unique_parents.add(parent)
                 parent = (parent - 1) // 2
         
-        # Update all affected parents
-        for parent in unique_parents:
+        # Update all affected parents from deepest to root to ensure children are fresh.
+        for parent in sorted(unique_parents, reverse=True):
             left_child = 2 * parent + 1
             right_child = left_child + 1
             if right_child < len(self.tree):
@@ -335,9 +335,10 @@ class PrioritizedReplayBuffer:
                     self.next_state_buffer[second_indices] = next_state[remaining:]
             
             # Add to priority tree with maximum priority
+            initial_priority = float((self.max_priority + self.epsilon) ** self.alpha)
             for i in range(batch_size):
                 data_idx = (self.pointer + i) % self.buffer_size
-                self.tree.add(self.max_priority, data_idx)
+                self.tree.add(initial_priority, data_idx)
             
             # Update pointer and size
             self.pointer = (self.pointer + batch_size) % self.buffer_size
@@ -351,9 +352,20 @@ class PrioritizedReplayBuffer:
         with self._lock:
             # Determine actual size
             actual_size = self.size if not self.buffer_filled else self.buffer_size
+            if actual_size == 0:
+                raise ValueError("Cannot sample from an empty replay buffer.")
             
             # Generate random values for sampling
             total_priority = self.tree.total_priority()
+            if total_priority <= 0:
+                indices = self.numpy_rng.choice(actual_size, size=batch_size, replace=True)
+                weights = torch.ones(batch_size, dtype=torch.float32)
+                states = torch.from_numpy(self.state_buffer[indices])
+                actions = torch.from_numpy(self.action_buffer[indices])
+                rewards = torch.from_numpy(self.reward_buffer[indices])
+                next_states = torch.from_numpy(self.next_state_buffer[indices])
+                self.frame += 1
+                return states, actions, rewards, next_states, weights, indices
             segment = total_priority / batch_size
             
             #  sampling
@@ -370,10 +382,12 @@ class PrioritizedReplayBuffer:
             
             # Calculate importance sampling weights
             beta = self._get_beta()
-            min_priority = self.epsilon if actual_size < self.buffer_size else np.min(priorities)
-            weights = (priorities / min_priority) ** (-beta)
-            weights = weights / np.max(weights)
-            weights = torch.from_numpy(weights)
+            self.frame += 1
+            priorities = np.maximum(priorities, self.epsilon)
+            min_priority = np.min(priorities)
+            weights = (priorities / (min_priority + 1e-8)) ** (-beta)
+            weights = weights / (np.max(weights) + 1e-8)
+            weights = torch.from_numpy(weights.astype(np.float32))
             
             # Sample data
             states = torch.from_numpy(self.state_buffer[indices])
@@ -388,15 +402,18 @@ class PrioritizedReplayBuffer:
          batch priority update.
         """
         with self._lock:
+            priorities = np.asarray(priorities, dtype=np.float32).reshape(-1)
+            indices = np.asarray(indices, dtype=np.int32).reshape(-1)
             # Add epsilon to prevent zero priorities
             priorities = np.maximum(priorities, self.epsilon)
             
             # Update max priority
-            self.max_priority = max(self.max_priority, np.max(priorities))
+            self.max_priority = max(self.max_priority, float(np.max(priorities)))
+            stored_priorities = np.power(priorities, self.alpha).astype(np.float32)
             
             # Batch update in tree
             # indices are data indices; SumTree.update_batch expects data indices
-            self.tree.update_batch(indices, priorities)
+            self.tree.update_batch(indices, stored_priorities)
 
     def new_episode(self):
         """Placeholder for episode boundary handling."""
@@ -775,9 +792,10 @@ class SequencePrioritizedReplayBuffer:
                         self.done_buffer[second_indices] = done[remaining:]
             
             # Add to priority tree with maximum priority
+            initial_priority = float((self.max_priority + self.epsilon) ** self.alpha)
             for i in range(batch_size):
                 data_idx = (self.pointer + i) % self.buffer_size
-                self.tree.add(self.max_priority, data_idx)
+                self.tree.add(initial_priority, data_idx)
             
             # Track episode boundaries
             for i in range(batch_size):
@@ -814,9 +832,21 @@ class SequencePrioritizedReplayBuffer:
     def _sample_prioritized_single_step(self, batch_size: int):
         """ prioritized single-step sampling."""
         actual_size = self.size if not self.buffer_filled else self.buffer_size
+        if actual_size == 0:
+            raise ValueError("Cannot sample from an empty replay buffer.")
         
         # Generate random values for sampling
         total_priority = self.tree.total_priority()
+        if total_priority <= 0:
+            indices = self.numpy_rng.choice(actual_size, size=batch_size, replace=True)
+            weights = torch.ones(batch_size, dtype=torch.float32)
+            states = torch.from_numpy(self.state_buffer[indices])
+            actions = torch.from_numpy(self.action_buffer[indices])
+            rewards = torch.from_numpy(self.reward_buffer[indices])
+            next_states = torch.from_numpy(self.next_state_buffer[indices])
+            dones = torch.from_numpy(self.done_buffer[indices])
+            self.frame += 1
+            return states, actions, rewards, next_states, dones, weights, indices
         segment = total_priority / batch_size
         
         #  sampling
@@ -833,9 +863,12 @@ class SequencePrioritizedReplayBuffer:
         
         # Calculate importance sampling weights
         beta = self._get_beta()
-        min_priority = self.epsilon if actual_size < self.buffer_size else np.min(priorities)
-        weights = (priorities / min_priority) ** (-beta)
-        weights = weights / np.max(weights)
+        self.frame += 1
+        priorities = np.maximum(priorities, self.epsilon)
+        min_priority = np.min(priorities)
+        weights = (priorities / (min_priority + 1e-8)) ** (-beta)
+        weights = weights / (np.max(weights) + 1e-8)
+        weights = torch.from_numpy(weights.astype(np.float32))
         
         # Sample data
         states = torch.from_numpy(self.state_buffer[indices])
@@ -849,6 +882,7 @@ class SequencePrioritizedReplayBuffer:
     def _sample_prioritized_sequences(self, batch_size: int):
         """ prioritized sequence sampling."""
         actual_size = self.size if not self.buffer_filled else self.buffer_size
+        self.frame += 1
         
         # Get valid sequence start positions
         valid_starts = self._get_valid_sequence_starts()
@@ -917,15 +951,18 @@ class SequencePrioritizedReplayBuffer:
          batch priority update.
         """
         with self._lock:
+            priorities = np.asarray(priorities, dtype=np.float32).reshape(-1)
+            indices = np.asarray(indices, dtype=np.int32).reshape(-1)
             # Add epsilon to prevent zero priorities
             priorities = np.maximum(priorities, self.epsilon)
             
             # Update max priority
-            self.max_priority = max(self.max_priority, np.max(priorities))
+            self.max_priority = max(self.max_priority, float(np.max(priorities)))
+            stored_priorities = np.power(priorities, self.alpha).astype(np.float32)
             
             # Batch update in tree
             # indices are data indices; SumTree.update_batch expects data indices
-            self.tree.update_batch(indices, priorities)
+            self.tree.update_batch(indices, stored_priorities)
 
     def new_episode(self):
         """Mark episode boundary."""

@@ -16,6 +16,7 @@ Supported Algorithms:
     - Custom DDPG (Modified DDPG implementation)
     - TD3 (Twin Delayed Deep Deterministic Policy Gradient)
     - SAC (Soft Actor-Critic)
+    - DQN (Deep Q-Network) - for discrete action spaces
     - PPO (Proximal Policy Optimization)
 
 Code Documentation Legend:
@@ -162,8 +163,8 @@ def main(args: list) -> None:
             use_per = network_config.get("use_per",False),
             per_alpha= network_config.get("per_alpha",0.6),
             per_beta_start = network_config.get("per_beta_start", 0.4),
-            per_beta_frames = network_config.get("per_beta_frames ", 100000),
-            per_epsilon = network_config.get("per_beta_frames ", 1e-6),
+            per_beta_frames = network_config.get("per_beta_frames", 100000),
+            per_epsilon = network_config.get("per_epsilon", 1e-6),
         )
     
     elif algorithm_name.lower() == "custom_ddpg":
@@ -185,8 +186,8 @@ def main(args: list) -> None:
                               use_per = network_config.get("use_per",False),
                               per_alpha= network_config.get("per_alpha",0.6),
                               per_beta_start = network_config.get("per_beta_start", 0.4),
-                              per_beta_frames = network_config.get("per_beta_frames ", 100000),
-                              per_epsilon = network_config.get("per_beta_frames ", 1e-6),
+                              per_beta_frames = network_config.get("per_beta_frames", 100000),
+                              per_epsilon = network_config.get("per_epsilon", 1e-6),
                               )
         
     elif algorithm_name.lower() == "td3":
@@ -208,8 +209,13 @@ def main(args: list) -> None:
                       use_per = network_config.get("use_per",False),
                       per_alpha= network_config.get("per_alpha",0.6),
                       per_beta_start = network_config.get("per_beta_start", 0.4),
-                      per_beta_frames = network_config.get("per_beta_frames ", 100000),
-                      per_epsilon = network_config.get("per_beta_frames ", 1e-6),
+                      per_beta_frames = network_config.get("per_beta_frames", 100000),
+                      per_epsilon = network_config.get("per_epsilon", 1e-6),
+                      obs_norm_enabled = network_config.get("obs_norm_enabled", False),
+                      obs_norm_clip = network_config.get("obs_norm_clip", 5.0),
+                      target_policy_noise = network_config.get("target_policy_noise", 0.2),
+                      target_noise_clip = network_config.get("target_noise_clip", 0.5),
+                      w_action_mapping = env_config.get("w_action_mapping", "projection"),
                       )
     
     elif algorithm_name.lower() == "sac":
@@ -226,11 +232,17 @@ def main(args: list) -> None:
                               buffer_size = training_config.get("buffer_size"),
                               actor_frequency_update = network_config.get('actor_frequency_update',1),
                               critic_frequency_update = network_config.get('critic_frequency_update',1),
+                              gradient_clip_norm = network_config.get("gradient_clip_norm", 5.0),
+                              target_q_clip = network_config.get("target_q_clip", 100.0),
+                              reward_clip = network_config.get("reward_clip", 30.0),
                               use_per = network_config.get("use_per",False),
                               per_alpha = network_config.get("per_alpha",0.6),
                               per_beta_start = network_config.get("per_beta_start", 0.4),
-                              per_beta_frames = network_config.get("per_beta_frames ", 100000),
-                              per_epsilon = network_config.get("per_beta_frames ", 1e-6),
+                              per_beta_frames = network_config.get("per_beta_frames", 100000),
+                              per_epsilon = network_config.get("per_epsilon", 1e-6),
+                              obs_norm_enabled = network_config.get("obs_norm_enabled", False),
+                              obs_norm_clip = network_config.get("obs_norm_clip", 5.0),
+                              w_action_mapping = env_config.get("w_action_mapping", "projection"),
                               )
     
     elif algorithm_name.lower() == "ppo":
@@ -246,6 +258,7 @@ def main(args: list) -> None:
                               actor_lr = network_config["actor_lr"], critic_lr = network_config["critic_lr"],
                               rollout_size= n_rollout_train * network_config.get("rollout_size",256),clip_range= network_config.get("clip_range",0.01),
                               ppo_epochs = network_config.get("ppo_epochs",5), minibatch_size = network_config.get("batch_size",16),
+                              w_action_mapping = env_config.get("w_action_mapping", "projection"),
                               )
     
     # RNN-enabled algorithms (using separate RNN classes)

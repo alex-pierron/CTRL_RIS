@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.amp as amp
 from torch.distributions import Normal
+from src.environment.ris_modules import process_raw_actions_torch
 
 
 class RolloutBuffer:
@@ -166,14 +167,15 @@ class ActorNetwork(nn.Module):
     """
     PPO Actor network.
     """
-    def __init__(self, state_dim, action_dim, N_t, K, P_max, actor_linear_layers=[128, 128, 128]):
+    def __init__(self, state_dim, action_dim, N_t, K, P_max,
+                 actor_linear_layers=[128, 128, 128],
+                 w_action_mapping: str = "projection"):
         super().__init__()
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
-        self.tensored_P_max = torch.tensor(P_max, dtype=torch.float32)
-
         self.action_dim = action_dim
+        self.w_action_mapping = w_action_mapping
         input_dim = state_dim
         self.linear_layers = nn.ModuleList()
         for layer_dim in actor_linear_layers:
@@ -182,97 +184,6 @@ class ActorNetwork(nn.Module):
 
         self.mean_output = nn.Linear(actor_linear_layers[-1], action_dim)
         self.log_std_param = nn.Parameter(torch.zeros(action_dim))
-
-    # CHANGED: Simplified this projection operator, as the original was a bit complex
-    # and might not be backprop-friendly if grads were ever needed (though here they aren't).
-    def actor_W_projection_operator(self, raw_W):
-        """
-        Projects a batch of beamforming matrices W onto the set defined by the power constraint.
-
-        Args:
-            raw_W (ndarray): Batch of raw beamforming matrices of shape (batch_size, rows, columns).
-        Returns:
-            ndarray: Batch of projected beamforming matrices of the same shape as raw_W.
-        """
-
-        # Ensure float type
-        #raw_W = raw_W.detach()
-
-        # Frobenius norms for each matrix in the batch
-        frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
-
-        # Traces of (W * W^H)
-        traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
-
-        # Mask of matrices exceeding power constraint
-        exceed_mask = traces > self.tensored_P_max
-
-        # Scaling factors
-        scaling_factors = torch.where(
-            exceed_mask,
-            (self.tensored_P_max.sqrt() / frobenius_norms),
-            torch.ones_like(frobenius_norms)
-        )
-
-        # Reshape scaling factors for broadcasting
-        scaling_factors = scaling_factors.view(-1, 1, 1)
-
-        # Apply scaling
-        projected_W = raw_W * scaling_factors
-
-        return projected_W
-    
-
-    def actor_process_raw_actions(self, raw_actions):
-        """
-        Transforms the raw model output into the phase noise matrix Theta and
-        beamforming matrix W while ensuring unit modulus and power constraints.
-        Works for batch processing.
-
-        Args:
-            raw_actions (torch.Tensor): Raw output of the model for actions to take.
-                                        Shape: (batch_size, action_dim).
-        Returns:
-            torch.Tensor: Processed actions of the same shape as raw_actions.
-        """
-        batch_size = raw_actions.shape[0]
-        actions = torch.zeros_like(raw_actions)  # Shape: (batch_size, action_dim)
-
-        # Splitting raw actions into W-related and Theta-related components
-        # Splitting raw actions into W-related and Theta-related components
-        W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]  # Shape: (batch_size, 2 * N_t * K)
-        theta_actions = raw_actions[:, 2 * self.N_t * self.K:]  # Shape: (batch_size, 2 * N_r)
-
-        # Process Theta actions
-        theta_real = theta_actions[:, 0::2]  # Real parts of Theta diagonal (Shape: (batch_size, M))
-        theta_imag = theta_actions[:, 1::2]  # Imaginary parts of Theta diagonal (Shape: (batch_size, M))
-        magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)  # Shape: (batch_size, M)
-
-        # Avoid division by zero
-        magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
-        normalized_theta_real = theta_real / magnitudes  # Shape: (batch_size, M)
-        normalized_theta_imag = theta_imag / magnitudes  # Shape: (batch_size, M)
-
-        # Store normalized Theta components in actions
-        actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
-        actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
-
-        # Process W actions
-        W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)  # Shape: (batch_size, K, 2 * N_t)
-        W_real = W_raw_actions[:, :, 0::2]  # Real parts of W (Shape: (batch_size, K, N_t))
-        W_imag = W_raw_actions[:, :, 1::2]  # Imaginary parts of W (Shape: (batch_size, K, N_t))
-        raw_W = W_real + 1j * W_imag  # Convert to complex matrix (Shape: (batch_size, K, N_t))
-
-        # Project W onto the power constraint set
-        W = self.actor_W_projection_operator(raw_W)  # Shape: (batch_size, K, N_t)
-
-        # Store processed W components in actions
-        flattened_real = W.real.flatten(start_dim=1)  # Shape: (batch_size, K * N_t)
-        flattened_imag = W.imag.flatten(start_dim=1)  # Shape: (batch_size, K * N_t)
-        actions[:, :2 * self.N_t * self.K:2] = flattened_real
-        actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
-
-        return actions
 
     def forward(self, x):
         """
@@ -305,8 +216,11 @@ class ActorNetwork(nn.Module):
         log_prob -= torch.log(1 - squashed_action.pow(2) + 1e-6)
         log_prob = log_prob.sum(dim=-1, keepdim=True)
         
-        # Apply domain-specific processing AFTER squashing
-        processed_action = self.actor_process_raw_actions(squashed_action)
+        # Apply domain-specific processing via environment module
+        processed_action = process_raw_actions_torch(
+            squashed_action, self.N_t, self.K, self.P_max, squashed_action.device,
+            w_action_mapping=self.w_action_mapping
+        )
 
         return processed_action, log_prob, raw_action
 
@@ -365,6 +279,7 @@ class PPO:
                  entropy_coef=0.01, value_coef=0.5, max_grad_norm=0.5,
                  rollout_size=2048, ppo_epochs=10, minibatch_size=64,
                  using_loss_scaling: bool = False,
+                 w_action_mapping: str = "projection",
                  seed=42):
 
         self.state_dim = state_dim
@@ -383,10 +298,14 @@ class PPO:
         self.minibatch_size = minibatch_size
         self.device = device
         self.n_rollout_envs = n_rollout_envs
+        self.w_action_mapping = w_action_mapping
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        self.actor = actor_model(state_dim, action_dim, N_t, K, P_max, actor_linear_layers).to(self.device)
+        self.actor = actor_model(
+            state_dim, action_dim, N_t, K, P_max, actor_linear_layers,
+            w_action_mapping=self.w_action_mapping
+        ).to(self.device)
         self.critic = critic_model(state_dim, critic_linear_layers).to(self.device)
 
         opt_cls = {"adam": optim.Adam, "adamw": optim.AdamW}[optimizer.lower()]

@@ -155,6 +155,7 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                                    user_limits=  grid_limit ,
                                    RIS_position= env_config.get("RIS_position"),downlink_uplink_eavesdropper_bools= [downlink_activated, uplink_activated, using_eavesdropper],
                                    thresholds = training_config.get("Curriculum_Learning_Thresholds", [0.25,0.25, 0.25]),
+                                   eavesdropper_thresholds = training_config.get("Curriculum_Learning_Eavesdropper_Thresholds", None),
                                    random_seed = training_config.get("Task_Manager_random_seed", 126),
                                     num_environments = n_rollout_envs )
     
@@ -315,9 +316,6 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 current_optim_steps_ep += ppo_epochs
                 avg_actor_loss += actor_loss
                 avg_critic_loss += critic_loss
-                
-                # Reset rollout buffer after training
-                network.rollout.reset()
                 # NOTE: Periodic logging of buffer stats, losses, and fairness
                 if (current_step + 1) % frequency_information == 0 and (num_step +1) % frequency_information == 0:
 
@@ -379,6 +377,7 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
 
         if curriculum_learning:
+                previous_max_level = int(Task_Manager.current_max_level)
                 if using_eavesdropper:
                     episodes_outcomes = Task_Manager.compute_episodes_outcome( downlink_sum = training_envs.get_downlink_sum_for_success_conditions() ,
                                                                               uplink_sum = training_envs.get_uplink_sum_for_success_conditions(),
@@ -386,6 +385,14 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                 else:
                     episodes_outcomes = Task_Manager.compute_episodes_outcome( downlink_sum = training_envs.get_downlink_sum_for_success_conditions() , uplink_sum = training_envs.get_uplink_sum_for_success_conditions())
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
+                current_max_level = int(Task_Manager.current_max_level)
+                if current_max_level != previous_max_level:
+                    curriculum_change_message = (
+                        f"[CURRICULUM] Max difficulty level changed: "
+                        f"{previous_max_level} -> {current_max_level}"
+                    )
+                    tqdm.write(curriculum_change_message)
+                    logger.info(curriculum_change_message)
 
         optim_steps += optim_steps_per_ep
             
@@ -429,6 +436,7 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         best_basic_reward_per_env = np.max(basic_reward_episode,axis=0)
 
         # Create console message for episode summary (with emojis)
+        curriculum_max_level = int(Task_Manager.current_max_level) if curriculum_learning else None
         console_message = (
             f"\n\n"
             f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
@@ -436,7 +444,11 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
             f"║ 📍 POSITIONING:\n"
             f"║    User Equipment Positions: {user_positions}\n"
-            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            + (
+                f"║    Eavesdroppers Positions: {eavesdroppers_positions}\n"
+                if using_eavesdropper else ""
+            )
+            + f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 🏆 REWARDS:\n"
             f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"
             f"║    • Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
@@ -448,7 +460,12 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 📊 PERFORMANCE:\n"
             f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+            + (
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 🎚️  CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
         # Create ASCII version for file logging
@@ -458,7 +475,11 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"+====================================================================================================+\n"
             f"| POSITIONING:\n"
             f"|    User Equipment Positions: {user_positions}\n"
-            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            + (
+                f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
+                if using_eavesdropper else ""
+            )
+            + f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| REWARDS:\n"
             f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {np.max(instant_user_rewards):8.4f}\n"
             f"|    * Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
@@ -470,7 +491,12 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| PERFORMANCE:\n"
             f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"+====================================================================================================+\n"
+            + (
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"+====================================================================================================+\n"
         )
 
         # Display beautiful console message and log ASCII version to file
@@ -501,6 +527,8 @@ def onp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         writer.add_scalar("Fairness/Max Reward's Fairness", fairness_for_best_reward, episode)
         writer.add_scalar("Fairness/Mean Average User Fairness", np.mean(avg_user_fairness_all_episode_general[:episode+1]), episode)
         writer.add_scalar("Fairness/Average User Fairness per episode", avg_user_fairness_all_envs, episode)
+        if curriculum_learning:
+            writer.add_scalar("Curriculum/Current max difficulty level", int(Task_Manager.current_max_level), episode)
         
         """scalars = {f"_mean_average_reward_env_{j}": np.mean(average_reward_per_env[:episode,j]) for j in range(0,n_rollout_envs) }
         writer.add_scalars('Per_env', scalars, episode)"""

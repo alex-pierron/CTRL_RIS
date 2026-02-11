@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.amp as amp
 from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from src.environment.ris_modules import process_raw_actions_torch
 import numpy as np
 import os 
 
@@ -25,9 +26,6 @@ class ActorNetwork(nn.Module):
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
-        self.tensored_P_max = torch.tensor(P_max)
-        self.numpied_P_max = self.tensored_P_max.detach().numpy()
-        # self.executing_on_gpu = False
         super(ActorNetwork, self).__init__()
         # Input & intermediate layers
         input_dim = state_dim
@@ -38,118 +36,17 @@ class ActorNetwork(nn.Module):
 
         # Output layer
         self.output = nn.Linear(actor_linear_layers[-1], action_dim)
-        self.batch_norm = nn.BatchNorm1d(action_dim)
-
-
-
-    def actor_W_projection_operator(self, raw_W):
-        """
-        Projects a batch of beamforming matrices W onto the set defined by the power constraint.
-
-        Args:
-            raw_W (ndarray): Batch of raw beamforming matrices of shape (batch_size, rows, columns).
-        Returns:
-            ndarray: Batch of projected beamforming matrices of the same shape as raw_W.
-        """
-
-        # Ensure float type
-        #raw_W = raw_W.detach()
-
-        # Frobenius norms for each matrix in the batch
-        frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
-
-        # Traces of (W * W^H)
-        traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
-
-        # Mask of matrices exceeding power constraint
-        exceed_mask = traces > self.tensored_P_max
-
-        # Scaling factors
-        scaling_factors = torch.where(
-            exceed_mask,
-            (self.tensored_P_max.sqrt() / frobenius_norms),
-            torch.ones_like(frobenius_norms)
-        )
-
-        # Reshape scaling factors for broadcasting
-        scaling_factors = scaling_factors.view(-1, 1, 1)
-
-        # Apply scaling
-        projected_W = raw_W * scaling_factors
-
-        return projected_W
-    
-
-    def actor_process_raw_actions(self, raw_actions):
-        """
-        Transforms the raw model output into the phase noise matrix Theta and
-        beamforming matrix W while ensuring unit modulus and power constraints.
-        Works for batch processing.
-
-        Args:
-            raw_actions (torch.Tensor): Raw output of the model for actions to take.
-                                        Shape: (batch_size, action_dim).
-        Returns:
-            torch.Tensor: Processed actions of the same shape as raw_actions.
-        """
-        batch_size = raw_actions.shape[0]
-        actions = torch.zeros_like(raw_actions)  # Shape: (batch_size, action_dim)
-
-        # Splitting raw actions into W-related and Theta-related components
-        # Splitting raw actions into W-related and Theta-related components
-        W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]  # Shape: (batch_size, 2 * N_t * K)
-        theta_actions = raw_actions[:, 2 * self.N_t * self.K:]  # Shape: (batch_size, 2 * N_r)
-
-        # Process Theta actions
-        theta_real = theta_actions[:, 0::2]  # Real parts of Theta diagonal (Shape: (batch_size, M))
-        theta_imag = theta_actions[:, 1::2]  # Imaginary parts of Theta diagonal (Shape: (batch_size, M))
-        magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)  # Shape: (batch_size, M)
-
-        # Avoid division by zero
-        magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
-        normalized_theta_real = theta_real / magnitudes  # Shape: (batch_size, M)
-        normalized_theta_imag = theta_imag / magnitudes  # Shape: (batch_size, M)
-
-        # Store normalized Theta components in actions
-        actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
-        actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
-
-        # Process W actions
-        W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)  # Shape: (batch_size, K, 2 * N_t)
-        W_real = W_raw_actions[:, :, 0::2]  # Real parts of W (Shape: (batch_size, K, N_t))
-        W_imag = W_raw_actions[:, :, 1::2]  # Imaginary parts of W (Shape: (batch_size, K, N_t))
-        raw_W = W_real + 1j * W_imag  # Convert to complex matrix (Shape: (batch_size, K, N_t))
-
-        # Project W onto the power constraint set
-        W = self.actor_W_projection_operator(raw_W)  # Shape: (batch_size, K, N_t)
-
-        # Store processed W components in actions
-        flattened_real = W.real.flatten(start_dim=1)  # Shape: (batch_size, K * N_t)
-        flattened_imag = W.imag.flatten(start_dim=1)  # Shape: (batch_size, K * N_t)
-        actions[:, :2 * self.N_t * self.K:2] = flattened_real
-        actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
-
-        return actions
-    
 
     def forward(self, x):
+        """Forward pass: linear layers + tanh. Returns raw actions (constraints applied externally)."""
         for layer in self.linear_layers:
             x = F.relu(layer(x))
-        x = F.tanh(self.output(x))  # tanh activation for output
-        x = self.batch_norm(x)
-        x = self.actor_process_raw_actions(x)
+        x = F.tanh(self.output(x))
         return x
 
     def forward_raw(self, x):
-        """
-        Forward pass without applying actor_process_raw_actions.
-        Returns raw actions (before constraints).
-        """
-        for layer in self.linear_layers:
-            x = F.relu(layer(x))
-        x = torch.tanh(self.output(x))  # raw tanh output
-        x = self.batch_norm(x)
-        return x
+        """Alias for forward: returns raw actions (before constraint processing)."""
+        return self.forward(x)
 
 
 class CriticNetwork(nn.Module):
@@ -335,7 +232,9 @@ class DDPG:
         Calculates TD errors for priority updates in PER for a single critic.
         """
         with torch.no_grad():
-            target_actions = self.target_actor(next_states)
+            target_actions = process_raw_actions_torch(
+                self.target_actor(next_states), self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values = self.target_critic(next_states, target_actions)
             target_values = rewards + self.gamma * target_q_values
             td_errors = torch.abs(q_values - target_values)
@@ -350,7 +249,10 @@ class DDPG:
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action = self.actor(state).squeeze(0).cpu()  # always return CPU action for rollout
+            raw_action = self.actor(state)
+            action = process_raw_actions_torch(
+                raw_action, self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0).cpu()
 
         return action
 
@@ -368,10 +270,14 @@ class DDPG:
 
         raw_action_noised = raw_action + noise
 
-        # Process actions on GPU
+        # Process actions via environment module
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(raw_action_noised.unsqueeze(0)).squeeze(0)
-            clean_action = self.actor.actor_process_raw_actions(raw_action.unsqueeze(0)).squeeze(0)
+            noised_action = process_raw_actions_torch(
+                raw_action_noised.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
+            clean_action = process_raw_actions_torch(
+                raw_action.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
 
         # Return to CPU for rollout
         return clean_action.cpu(), noised_action.cpu()
@@ -410,7 +316,9 @@ class DDPG:
 
         # * 1.1°/ Compute target values
         with torch.no_grad():
-            target_actions = self.target_actor(next_state)
+            target_actions = process_raw_actions_torch(
+                self.target_actor(next_state), self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values = self.target_critic(next_state, target_actions)
             y = rewards   +  self.gamma  * target_q_values 
         
@@ -445,7 +353,9 @@ class DDPG:
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
                 with amp.autocast(self.device_string):
-                    actor_actions = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        self.actor(state), self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values = self.critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
@@ -460,7 +370,9 @@ class DDPG:
                 updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
-                        actor_actions = self.actor(state)
+                        actor_actions = process_raw_actions_torch(
+                            self.actor(state), self.N_t, self.K, self.P_max, self.device
+                        )
                         actor_q_values = self.critic(state, actor_actions)
                         if self.use_per:
                             actor_loss = (weights * actor_q_values).mean()
@@ -498,7 +410,9 @@ class DDPG:
             # Update Actor according to equation (28) in the original article.
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
-                actor_actions = self.actor(state)
+                actor_actions = process_raw_actions_torch(
+                    self.actor(state), self.N_t, self.K, self.P_max, self.device
+                )
                 actor_q_values = self.critic(state, actor_actions)
                 if self.use_per:
                     actor_loss = (weights * actor_q_values).mean()
@@ -512,7 +426,9 @@ class DDPG:
             else:
                 updated_actor = False
                 with torch.no_grad():
-                    actor_actions = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        self.actor(state), self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values = self.critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
@@ -766,7 +682,10 @@ class Custom_DDPG:
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action = self.actor(state).squeeze(0).cpu()  # always return CPU action for rollout
+            raw_action = self.actor(state)
+            action = process_raw_actions_torch(
+                raw_action, self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0).cpu()
 
         return action
 
@@ -784,10 +703,14 @@ class Custom_DDPG:
 
         raw_action_noised = raw_action + noise
 
-        # Process actions on GPU
+        # Process actions via environment module
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(raw_action_noised.unsqueeze(0)).squeeze(0)
-            clean_action = self.actor.actor_process_raw_actions(raw_action.unsqueeze(0)).squeeze(0)
+            noised_action = process_raw_actions_torch(
+                raw_action_noised.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
+            clean_action = process_raw_actions_torch(
+                raw_action.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
 
         # Return to CPU for rollout
         return clean_action.cpu(), noised_action.cpu()
@@ -824,7 +747,9 @@ class Custom_DDPG:
 
         # * Update Critic
         with torch.no_grad():
-            target_actions = self.target_actor(next_state)
+            target_actions = process_raw_actions_torch(
+                self.target_actor(next_state), self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values = self.target_present_critic(next_state, target_actions)
             y_present_reward = rewards  
             y_future_reward = rewards   +  self.gamma  * target_q_values # * (1 - dones)
@@ -877,7 +802,10 @@ class Custom_DDPG:
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
                 with amp.autocast(self.device_string):
-                    actor_q_values = self.future_critic(state, self.actor(state))
+                    actor_actions = process_raw_actions_torch(
+                        self.actor(state), self.N_t, self.K, self.P_max, self.device
+                    )
+                    actor_q_values = self.future_critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
                     else:
@@ -892,7 +820,10 @@ class Custom_DDPG:
                 updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
-                        actor_q_values = self.future_critic(state, self.actor(state))
+                        actor_actions = process_raw_actions_torch(
+                            self.actor(state), self.N_t, self.K, self.P_max, self.device
+                        )
+                        actor_q_values = self.future_critic(state, actor_actions)
                         if self.use_per:
                             actor_loss = (weights * actor_q_values).mean()
                         else:
@@ -942,7 +873,10 @@ class Custom_DDPG:
             # Update Actor according to equation (28) in the original article.
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
-                actor_q_values = self.future_critic(state, self.actor(state))
+                actor_actions = process_raw_actions_torch(
+                    self.actor(state), self.N_t, self.K, self.P_max, self.device
+                )
+                actor_q_values = self.future_critic(state, actor_actions)
                 if self.use_per:
                     actor_loss = (weights * actor_q_values).mean()
                 else:
@@ -955,7 +889,10 @@ class Custom_DDPG:
             else:
                 updated_actor = False
                 with torch.no_grad():
-                    actor_q_values = self.future_critic(state, self.actor(state))
+                    actor_actions = process_raw_actions_torch(
+                        self.actor(state), self.N_t, self.K, self.P_max, self.device
+                    )
+                    actor_q_values = self.future_critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
                     else:

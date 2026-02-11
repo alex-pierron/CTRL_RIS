@@ -55,18 +55,9 @@ def rician_fading_channel(transmitter_position: np.ndarray, receiver_position: n
 
     else:
         # TODO: to be modified for dealing with self interference
-        # Compute the path loss coefficient
-        diff = receiver_position - transmitter_position
-        distance = np.linalg.norm(diff) + 3e-2  # Avoid division by zero
-        """alpha_h = -30  - 10 * alpha * np.log10(distance/1)
-        alpha_h_linear = 10 ** (alpha_h / 10)"""
-
         # Compute the deterministic LoS component
         h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
         # Compute the random NLoS component
-        h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
-        
-        h_los = computing_LoS_2D(transmitter_position, receiver_position, W_h_t, W_h_r, d_h_tx, d_h_rx, lambda_h)
         h_nlos = computing_NLoS(W_h_t = W_h_t, W_h_r = W_h_r, numpy_generator = numpy_generator)
         return ( np.sqrt(epsilon_h / (epsilon_h + 1)) * h_los + np.sqrt(1 / (epsilon_h + 1)) * h_nlos ) #? Testing the formula from Bjornson & Demir (2024) for LoS signal, page 252.
 
@@ -570,7 +561,7 @@ def generate_uplink_signal_users(P_k, K, kappa_B_u_k, numpy_generator: np.random
         s_u (np.ndarray): Transmitted symbols by all users. Shape: (K, 1).
     """
     # Generate the users' information symbols s_{u,k} ~ CN(0, 1) for all K users
-    s_u = (numpy_generator.standard_normal(size = (K, 1) ) + 1j * numpy_generator( size = (K, 1) ) ) / np.sqrt(2)  # Shape: (K, 1)
+    s_u = (numpy_generator.standard_normal(size = (K, 1) ) + 1j * numpy_generator.standard_normal( size = (K, 1) ) ) / np.sqrt(2)  # Shape: (K, 1)
     
     # Scale the symbols to the users' transmit power
     s_tilde_u = np.sqrt(P_k).reshape(-1, 1) * s_u  # Element-wise scaling. Shape: (K, 1)

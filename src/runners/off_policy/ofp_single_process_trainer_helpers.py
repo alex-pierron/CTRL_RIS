@@ -52,7 +52,8 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
                                     avg_fairness, best_fairness, avg_actor_loss, avg_critic_loss,
                                     basic_reward_episode, instant_user_rewards, 
                                     additional_information_best_case, using_eavesdropper,
-                                    avg_eavesdropper_reward=None, best_eaves_reward=None):
+                                    avg_eavesdropper_reward=None, best_eaves_reward=None,
+                                    curriculum_max_level=None):
     """
     Create formatted console and log messages for episode summary.
     
@@ -88,6 +89,7 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
             f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
             f"║ 📍 POSITIONING:\n"
             f"║    User Equipment Positions: {users_position}\n"
+            f"║    Eavesdroppers Positions: {eavesdroppers_positions}\n"
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 🏆 REWARDS:\n"
             f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {max_reward:8.4f}\n"
@@ -102,7 +104,12 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 📊 PERFORMANCE:\n"
             f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+            + (
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 🎚️  CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
         
         log_msg = (
@@ -126,7 +133,12 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
             f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| PERFORMANCE:\n"
             f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"+====================================================================================================+\n"
+            + (
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"+====================================================================================================+\n"
         )
     else:
         console_msg = (
@@ -147,7 +159,12 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 📊 PERFORMANCE:\n"
             f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+            + (
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 🎚️  CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
         
         log_msg = (
@@ -167,7 +184,12 @@ def create_episode_summary_messages(episode, episode_offset, optim_steps, users_
             f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| PERFORMANCE:\n"
             f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"+====================================================================================================+\n"
+            + (
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"+====================================================================================================+\n"
         )
     
     return console_msg, log_msg

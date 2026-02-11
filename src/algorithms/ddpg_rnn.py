@@ -24,6 +24,7 @@ from .replay_buffer import (
     SequencePrioritizedReplayBuffer
 )
 from .rnn_networks import RNNActorNetwork, RNNCriticNetwork
+from src.environment.ris_modules import process_raw_actions_torch
 import numpy as np
 import os
 
@@ -218,7 +219,10 @@ class DDPG_RNN:
     def _calculate_td_errors(self, states, actions, rewards, next_states, q_values):
         """Calculates TD errors for priority updates in PER."""
         with torch.no_grad():
-            target_actions, _ = self.target_actor(next_states)
+            target_raw, _ = self.target_actor(next_states)
+            target_actions = process_raw_actions_torch(
+                target_raw, self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values, _ = self.target_critic(next_states, target_actions)
             target_values = rewards + self.gamma * target_q_values
             td_errors = torch.abs(q_values - target_values)
@@ -230,7 +234,10 @@ class DDPG_RNN:
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action, new_hidden_states = self.actor(state, hidden_states)
+            raw_action, new_hidden_states = self.actor(state, hidden_states)
+            action = process_raw_actions_torch(
+                raw_action, self.N_t, self.K, self.P_max, self.device
+            )
             # Store hidden states internally for next call
             self.actor.set_hidden_states(new_hidden_states)
             return action.squeeze(0).cpu()
@@ -250,10 +257,14 @@ class DDPG_RNN:
         noise = torch.tensor(noise_np, dtype=torch.float32, device=self.device)
         raw_action_noised = raw_action + noise
 
-        # Process actions
+        # Process actions via environment module
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(raw_action_noised.unsqueeze(0)).squeeze(0)
-            clean_action = self.actor.actor_process_raw_actions(raw_action.unsqueeze(0)).squeeze(0)
+            noised_action = process_raw_actions_torch(
+                raw_action_noised.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
+            clean_action = process_raw_actions_torch(
+                raw_action.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
 
         return clean_action.cpu(), noised_action.cpu()
 
@@ -283,7 +294,10 @@ class DDPG_RNN:
 
         # Compute target values
         with torch.no_grad():
-            target_actions, _ = self.target_actor(next_state)
+            target_raw, _ = self.target_actor(next_state)
+            target_actions = process_raw_actions_torch(
+                target_raw, self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values, _ = self.target_critic(next_state, target_actions)
             
             # Handle sequence-aware buffers - ensure rewards and target_q_values have compatible shapes
@@ -339,7 +353,10 @@ class DDPG_RNN:
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
                 with amp.autocast(self.device_string):
-                    actor_actions, _ = self.actor(state)
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values, _ = self.critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
@@ -355,7 +372,10 @@ class DDPG_RNN:
                 updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
-                        actor_actions, _ = self.actor(state)
+                        actor_raw, _ = self.actor(state)
+                        actor_actions = process_raw_actions_torch(
+                            actor_raw, self.N_t, self.K, self.P_max, self.device
+                        )
                         actor_q_values, _ = self.critic(state, actor_actions)
                         if self.use_per:
                             actor_loss = (weights * actor_q_values).mean()
@@ -392,7 +412,10 @@ class DDPG_RNN:
             # Update Actor
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
-                actor_actions, _ = self.actor(state)
+                actor_raw, _ = self.actor(state)
+                actor_actions = process_raw_actions_torch(
+                    actor_raw, self.N_t, self.K, self.P_max, self.device
+                )
                 actor_q_values, _ = self.critic(state, actor_actions)
                 if self.use_per:
                     actor_loss = (weights * actor_q_values).mean()
@@ -406,7 +429,10 @@ class DDPG_RNN:
             else:
                 updated_actor = False
                 with torch.no_grad():
-                    actor_actions, _ = self.actor(state)
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values, _ = self.critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
@@ -714,7 +740,10 @@ class Custom_DDPG_RNN:
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action, new_hidden_states = self.actor(state, hidden_states)
+            raw_action, new_hidden_states = self.actor(state, hidden_states)
+            action = process_raw_actions_torch(
+                raw_action, self.N_t, self.K, self.P_max, self.device
+            )
             # Store hidden states internally for next call
             self.actor.set_hidden_states(new_hidden_states)
             return action.squeeze(0).cpu()
@@ -734,10 +763,14 @@ class Custom_DDPG_RNN:
         noise = torch.tensor(noise_np, dtype=torch.float32, device=self.device)
         raw_action_noised = raw_action + noise
 
-        # Process actions
+        # Process actions via environment module
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(raw_action_noised.unsqueeze(0)).squeeze(0)
-            clean_action = self.actor.actor_process_raw_actions(raw_action.unsqueeze(0)).squeeze(0)
+            noised_action = process_raw_actions_torch(
+                raw_action_noised.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
+            clean_action = process_raw_actions_torch(
+                raw_action.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
 
         return clean_action.cpu(), noised_action.cpu()
 
@@ -767,7 +800,10 @@ class Custom_DDPG_RNN:
 
         # Update Critic
         with torch.no_grad():
-            target_actions, _ = self.target_actor(next_state)
+            target_raw, _ = self.target_actor(next_state)
+            target_actions = process_raw_actions_torch(
+                target_raw, self.N_t, self.K, self.P_max, self.device
+            )
             target_q_values, _ = self.target_present_critic(next_state, target_actions)
             
             # Handle sequence-aware buffers - ensure rewards and target_q_values have compatible shapes
@@ -839,7 +875,11 @@ class Custom_DDPG_RNN:
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
                 with amp.autocast(self.device_string):
-                    actor_q_values, _ = self.future_critic(state, self.actor(state))
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
+                    actor_q_values, _ = self.future_critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
                     else:
@@ -854,7 +894,11 @@ class Custom_DDPG_RNN:
                 updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
-                        actor_q_values, _ = self.future_critic(state, self.actor(state))
+                        actor_raw, _ = self.actor(state)
+                        actor_actions = process_raw_actions_torch(
+                            actor_raw, self.N_t, self.K, self.P_max, self.device
+                        )
+                        actor_q_values, _ = self.future_critic(state, actor_actions)
                         if self.use_per:
                             actor_loss = (weights * actor_q_values).mean()
                         else:
@@ -904,7 +948,11 @@ class Custom_DDPG_RNN:
             # Update Actor
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
-                actor_q_values, _ = self.future_critic(state, self.actor(state))
+                actor_raw, _ = self.actor(state)
+                actor_actions = process_raw_actions_torch(
+                    actor_raw, self.N_t, self.K, self.P_max, self.device
+                )
+                actor_q_values, _ = self.future_critic(state, actor_actions)
                 if self.use_per:
                     actor_loss = (weights * actor_q_values).mean()
                 else:
@@ -917,7 +965,11 @@ class Custom_DDPG_RNN:
             else:
                 updated_actor = False
                 with torch.no_grad():
-                    actor_q_values, _ = self.future_critic(state, self.actor(state))
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
+                    actor_q_values, _ = self.future_critic(state, actor_actions)
                     if self.use_per:
                         actor_loss = (weights * actor_q_values).mean()
                     else:

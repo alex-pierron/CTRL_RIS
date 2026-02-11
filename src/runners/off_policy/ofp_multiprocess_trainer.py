@@ -96,6 +96,36 @@ def setup_logger(log_dir, log_filename='training.log'):
     return logger
 
 
+def should_emit_replay_buffer_summary(
+    buffer_current_size,
+    replay_progress_target,
+    last_logged_quarter,
+    episodes_since_full_summary,
+    post_fill_episode_log_interval,
+):
+    """
+    Return whether to emit an episode summary based on replay fill progress.
+
+    Logs once at each 25% milestone during fill-up, then sparsely after 100%.
+    """
+    if replay_progress_target <= 0:
+        return True, last_logged_quarter, episodes_since_full_summary
+
+    post_fill_episode_log_interval = max(1, int(post_fill_episode_log_interval))
+    current_fullness = min(buffer_current_size / replay_progress_target, 1.0)
+    current_quarter = int(current_fullness * 4)
+
+    if current_quarter > last_logged_quarter:
+        return True, current_quarter, 0 if current_quarter >= 4 else episodes_since_full_summary
+
+    if current_quarter >= 4:
+        episodes_since_full_summary += 1
+        if episodes_since_full_summary >= post_fill_episode_log_interval:
+            return True, last_logged_quarter, 0
+
+    return False, last_logged_quarter, episodes_since_full_summary
+
+
 def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, writer,
                          action_noise_activated=False,
                          batch_instead_of_buff=False,
@@ -160,6 +190,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     
     # Determine buffer size for training decisions
     buffer_size = deepcopy(batch_size) if batch_instead_of_buff else network.replay_buffer.buffer_size
+    post_fill_episode_log_interval = training_config.get("post_fill_episode_log_interval", 1)
     
     # Extract reward function configurations
     decisive_reward_functions = env_config.get("decisive_reward_functions", ["basic_reward"])
@@ -192,8 +223,12 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             num_steps_per_episode=max_num_step_per_episode,
             user_limits=grid_limit,
             RIS_position=env_config.get("RIS_position"),
+            Buffer_Size = 50,
             downlink_uplink_eavesdropper_bools=[downlink_activated, uplink_activated, using_eavesdropper],
-            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.25, 0.25, 0.25]),
+            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.25, 0, 0.25]),
+            eavesdropper_thresholds=training_config.get(
+                "Curriculum_Learning_Eavesdropper_Thresholds", None
+            ),
             random_seed=training_config.get("Task_Manager_random_seed", 126),
             num_environments=n_rollout_envs
         )
@@ -203,6 +238,8 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
     num_eval_periode = 0
     eval_current_step = 0
     buffer_filled = False
+    last_logged_replay_quarter = 0
+    episodes_since_full_summary = 0
     best_average_reward = 0
     optim_steps = 0
     optim_steps_actor = 0
@@ -525,6 +562,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
 
         # Update curriculum learning based on episode outcomes
         if curriculum_learning:
+            previous_max_level = int(Task_Manager.current_max_level)
             if using_eavesdropper:
                 episodes_outcomes = Task_Manager.compute_episodes_outcome(
                     downlink_sum=training_envs.get_downlink_sum_for_success_conditions(),
@@ -537,6 +575,14 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
                     uplink_sum=training_envs.get_uplink_sum_for_success_conditions()
                 )
             Task_Manager.update_episode_outcomes(episodes_outcomes)
+            current_max_level = int(Task_Manager.current_max_level)
+            if current_max_level != previous_max_level:
+                curriculum_change_message = (
+                    f"[CURRICULUM] Max difficulty level changed: "
+                    f"{previous_max_level} -> {current_max_level}"
+                )
+                tqdm.write(curriculum_change_message)
+                logger.info(curriculum_change_message)
 
 
         # Calculate episode-level averages
@@ -593,6 +639,7 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         best_basic_reward_per_env = np.max(basic_reward_episode, axis=0)
 
         # Create comprehensive episode summary message for console (with emojis)
+        curriculum_max_level = int(Task_Manager.current_max_level) if curriculum_learning else None
         console_message = (
             f"\n\n"
             f"╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
@@ -600,8 +647,11 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"╠══════════════════════════════════════════════════════════════════════════════════════════════════╣\n"
             f"║ 📍 POSITIONING:\n"
             f"║    User Equipment Positions: {user_positions}\n"
-            f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
-            f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+            + (
+                f"║    Eavesdroppers Positions: {eavesdroppers_positions}\n"
+                if using_eavesdropper else ""
+            )
+            + f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 🏆 REWARDS:\n"
             f"║    • Average Reward: {avg_reward:8.4f} │ Max Instant: {np.max(instant_user_rewards):8.4f}\n"
             f"║    • Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
@@ -613,7 +663,12 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
             f"║ 📊 PERFORMANCE:\n"
             f"║    • Actor Loss: {avg_actor_loss:8.4f} │ Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+            + (
+                f"║ ──────────────────────────────────────────────────────────────────────────────────────────────── ║\n"
+                f"║ 🎚️  CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"╚══════════════════════════════════════════════════════════════════════════════════════════════════╝\n"
         )
 
         # Create ASCII version for file logging
@@ -624,7 +679,11 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"+====================================================================================================+\n"
             f"| POSITIONING:\n"
             f"|    User Equipment Positions: {user_positions}\n"
-            f"| ---------------------------------------------------------------------------------------------------- |\n"
+            + (
+                f"|    Eavesdroppers Positions: {eavesdroppers_positions}\n"
+                if using_eavesdropper else ""
+            )
+            + f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| REWARDS:\n"
             f"|    * Average Reward: {avg_reward:8.4f} | Max Instant: {np.max(instant_user_rewards):8.4f}\n"
             f"|    * Best per Environment: {episode_max_instant_reward_reached_per_env}\n"
@@ -636,14 +695,28 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
             f"| ---------------------------------------------------------------------------------------------------- |\n"
             f"| PERFORMANCE:\n"
             f"|    * Actor Loss: {avg_actor_loss:8.4f} | Critic Loss: {avg_critic_loss:8.4f}\n"
-            f"+====================================================================================================+\n"
+            + (
+                f"| ---------------------------------------------------------------------------------------------------- |\n"
+                f"| CURRICULUM: Max Difficulty Level = {curriculum_max_level}\n"
+                if curriculum_max_level is not None else ""
+            )
+            + f"+====================================================================================================+\n"
         )
 
-        # Display beautiful console message
-        tqdm.write(console_message)
-        
-        # Log ASCII version to file
-        logger.verbose(log_message)
+        should_log_summary, last_logged_replay_quarter, episodes_since_full_summary = (
+            should_emit_replay_buffer_summary(
+                buffer_current_size=network.replay_buffer.size,
+                replay_progress_target=max(1, buffer_size),
+                last_logged_quarter=last_logged_replay_quarter,
+                episodes_since_full_summary=episodes_since_full_summary,
+                post_fill_episode_log_interval=post_fill_episode_log_interval,
+            )
+        )
+        if should_log_summary:
+            # Display beautiful console message
+            tqdm.write(console_message)
+            # Log ASCII version to file
+            logger.verbose(log_message)
 
         # Log episode-level metrics to TensorBoard
         writer.add_scalar("Actor Loss/Average actor Loss per episode", avg_actor_loss, episode)
@@ -685,6 +758,8 @@ def ofp_multiprocess_trainer(training_envs, network, training_config, log_dir, w
         writer.add_scalar("Fairness/Mean Average User Fairness", 
                          np.mean(avg_user_fairness_all_episode_general[:episode+1]), episode)
         writer.add_scalar("Fairness/Average User Fairness per episode", avg_user_fairness_all_envs, episode)
+        if curriculum_learning:
+            writer.add_scalar("Curriculum/Current max difficulty level", int(Task_Manager.current_max_level), episode)
         
         # Log eavesdropper metrics if applicable
         if using_eavesdropper:

@@ -1,7 +1,4 @@
 import numpy as np
-from copy import deepcopy
-import os 
-import sys
 
 def independant_R_sec_k(k: int, L: int, SINR_B_k, SINR_S_k,
                         SINR_E_d_k_l, SINR_E_u_k_l,

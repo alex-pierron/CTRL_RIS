@@ -5,16 +5,50 @@ import torch.optim as optim
 import torch.amp as amp
 from torch.distributions import Normal
 from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from src.environment.ris_modules import process_raw_actions_torch
 import numpy as np
 import os 
 
+
+class RunningMeanStd:
+    """Online normalization statistics for vector observations."""
+
+    def __init__(self, shape, epsilon=1e-4):
+        self.mean = np.zeros(shape, dtype=np.float64)
+        self.var = np.ones(shape, dtype=np.float64)
+        self.count = epsilon
+
+    def update(self, x):
+        x = np.asarray(x, dtype=np.float64)
+        if x.ndim == 1:
+            x = x[None, :]
+        batch_mean = np.mean(x, axis=0)
+        batch_var = np.var(x, axis=0)
+        batch_count = x.shape[0]
+        self._update_from_moments(batch_mean, batch_var, batch_count)
+
+    def _update_from_moments(self, batch_mean, batch_var, batch_count):
+        delta = batch_mean - self.mean
+        total_count = self.count + batch_count
+        new_mean = self.mean + delta * batch_count / total_count
+
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        m2 = m_a + m_b + np.square(delta) * self.count * batch_count / total_count
+        new_var = m2 / total_count
+
+        self.mean = new_mean
+        self.var = np.maximum(new_var, 1e-8)
+        self.count = total_count
+
+
 class ActorNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim, N_t, K, P_max, actor_linear_layers = [128,128,128]):
+    def __init__(self, state_dim, action_dim, N_t, K, P_max, actor_linear_layers = [128,128,128],
+                 w_action_mapping: str = "projection"):
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
-        self.tensored_P_max = torch.tensor(P_max)
-        self.numpied_P_max = self.tensored_P_max.detach().numpy()
+        self.w_action_mapping = w_action_mapping
         super(ActorNetwork, self).__init__()
         input_dim = state_dim
         self.linear_layers = nn.ModuleList()
@@ -22,91 +56,14 @@ class ActorNetwork(nn.Module):
         for layer_dim in actor_linear_layers:
             self.linear_layers.append(nn.Linear(input_dim, layer_dim))
             input_dim = layer_dim
-        self.output = nn.Linear(actor_linear_layers[-1], action_dim)
         
         # For SAC, we need separate outputs for mean and log_std
         self.mean_output = nn.Linear(actor_linear_layers[-1], action_dim)
         self.log_std_output = nn.Linear(actor_linear_layers[-1], action_dim)
         
         # Clamp bounds for log_std
-        self.log_std_min = -10
+        self.log_std_min = -5
         self.log_std_max = 2
-        
-        # Note: Avoid BatchNorm on action outputs for SAC stability
-
-    def actor_W_projection_operator(self, raw_W):
-        """
-        Projects a batch of beamforming matrices W onto the set defined by the power constraint.
-        """
-        # Ensure float type while keeping gradients
-        #raw_W = raw_W.detach()
-
-        # Frobenius norms for each matrix in the batch
-        frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
-
-        # Traces of (W * W^H)
-        traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
-
-        # Mask of matrices exceeding power constraint
-        exceed_mask = traces > self.tensored_P_max
-
-        # Scaling factors
-        scaling_factors = torch.where(
-            exceed_mask,
-            (self.tensored_P_max.sqrt() / frobenius_norms),
-            torch.ones_like(frobenius_norms)
-        )
-
-        # Reshape scaling factors for broadcasting
-        scaling_factors = scaling_factors.view(-1, 1, 1)
-
-        # Apply scaling
-        projected_W = raw_W * scaling_factors
-
-        return projected_W
-
-    def actor_process_raw_actions(self, raw_actions):
-        """
-        Transforms the raw model output into the phase noise matrix Theta and
-        beamforming matrix W while ensuring unit modulus and power constraints.
-        """
-        batch_size = raw_actions.shape[0]
-        actions = torch.zeros_like(raw_actions)
-
-        # Splitting raw actions into W-related and Theta-related components
-        W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]
-        theta_actions = raw_actions[:, 2 * self.N_t * self.K:]
-
-        # Process Theta actions
-        theta_real = theta_actions[:, 0::2]
-        theta_imag = theta_actions[:, 1::2]
-        magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)
-
-        # Avoid division by zero
-        magnitudes = torch.where(magnitudes == 0, torch.ones_like(magnitudes), magnitudes)
-        normalized_theta_real = theta_real / magnitudes
-        normalized_theta_imag = theta_imag / magnitudes
-
-        # Store normalized Theta components in actions
-        actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
-        actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
-
-        # Process W actions
-        W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)
-        W_real = W_raw_actions[:, :, 0::2]
-        W_imag = W_raw_actions[:, :, 1::2]
-        raw_W = W_real + 1j * W_imag
-
-        # Project W onto the power constraint set
-        W = self.actor_W_projection_operator(raw_W)
-
-        # Store processed W components in actions
-        flattened_real = W.real.flatten(start_dim=1)
-        flattened_imag = W.imag.flatten(start_dim=1)
-        actions[:, :2 * self.N_t * self.K:2] = flattened_real
-        actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
-
-        return actions
 
     def forward(self, x):
         for layer in self.linear_layers:
@@ -118,39 +75,46 @@ class ActorNetwork(nn.Module):
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         
         return mean, log_std
-
-    def sample(self, state):
-        """Sample action with reparameterization trick"""
+    
+    def sample(self, state, device=None):
         mean, log_std = self.forward(state)
         std = log_std.exp()
-        
-        # Create normal distribution and sample
-        normal = Normal(mean, std)
-        x_t = normal.rsample()  # Reparameterization trick
-        
-        # Apply tanh and process actions
-        raw_action = torch.tanh(x_t)
-        action = self.actor_process_raw_actions(raw_action)
-        
-        # Calculate log probability
-        log_prob = normal.log_prob(x_t).sum(dim=-1, keepdim=True)
-        # Adjust for tanh transformation
-        log_prob -= torch.log(1 - torch.tanh(x_t).pow(2) + 1e-6).sum(dim=-1, keepdim=True)
-        
-        return action, log_prob, raw_action
 
-    def get_action(self, state):
+        normal = Normal(mean, std)
+        x_t = normal.rsample()
+        raw_action = torch.tanh(x_t)
+        action = process_raw_actions_torch(
+            raw_action,
+            self.N_t,
+            self.K,
+            self.P_max,
+            device or raw_action.device,
+            w_action_mapping=self.w_action_mapping,
+        )
+
+        # Tanh squashing correction for valid SAC entropy term.
+        log_prob = normal.log_prob(x_t).sum(dim=-1, keepdim=True)
+        log_prob -= torch.log(1 - raw_action.pow(2) + 1e-6).sum(dim=-1, keepdim=True)
+
+        return action, log_prob, raw_action
+    
+
+    def get_action(self, state, device=None):
         """Get deterministic action for evaluation"""
         mean, _ = self.forward(state)
         raw_action = torch.tanh(mean)
-        action = self.actor_process_raw_actions(raw_action)
+        action = process_raw_actions_torch(
+            raw_action,
+            self.N_t,
+            self.K,
+            self.P_max,
+            device or raw_action.device,
+            w_action_mapping=self.w_action_mapping,
+        )
         return action
 
     def forward_raw(self, x):
-        """
-        Forward pass without applying actor_process_raw_actions.
-        Returns raw actions (before constraints), aligned with TD3/DDPG.
-        """
+        """Returns raw actions (before constraint processing), aligned with TD3/DDPG."""
         for layer in self.linear_layers:
             x = F.relu(layer(x))
         x = torch.tanh(self.mean_output(x))
@@ -209,6 +173,7 @@ class SAC:
         per_epsilon (float, optional): Small constant for PER priorities. Default is 1e-6.
     """
     def __init__(self, state_dim, action_dim, N_t, K, P_max,
+                 action_space_type: str = "continuous",
                  actor_model=ActorNetwork, critic_model=CriticNetwork,  # Changed to None for example
                  actor_linear_layers=[128,128,128],
                  critic_linear_layers=[128,128],
@@ -222,13 +187,28 @@ class SAC:
                  critic_frequency_update: int = 1,
                  action_noise_scale:float  = 0,
                  using_loss_scaling: bool = False,
+                 gradient_clip_norm: float = 5.0,
+                 target_q_clip: float = 100.0,
+                 reward_clip: float = 10.0,
                  # PER parameters
                  use_per: bool = False,
                  per_alpha: float = 0.6,
                  per_beta_start: float = 0.4,
                  per_beta_frames: int = 100000,
-                 per_epsilon: float = 1e-6):
+                 per_epsilon: float = 1e-6,
+                 obs_norm_enabled: bool = False,
+                 obs_norm_clip: float = 5.0,
+                 w_action_mapping: str = "projection"):
         
+        # Validate action space type
+        # NOTE: SAC is designed for continuous action spaces only
+        if action_space_type != "continuous":
+            raise ValueError(
+                f"SAC requires continuous action space, got '{action_space_type}'. "
+                f"For discrete action spaces, use DQN instead."
+            )
+        
+        self.action_space_type = action_space_type
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -245,6 +225,14 @@ class SAC:
         self.automatic_entropy_tuning = automatic_entropy_tuning
         self.use_per = use_per
         self.per_epsilon = per_epsilon
+        self.gradient_clip_norm = gradient_clip_norm
+        self.target_q_clip = target_q_clip
+        self.reward_clip = reward_clip
+        self.last_training_stats = {}
+        self.obs_norm_enabled = obs_norm_enabled
+        self.obs_norm_clip = obs_norm_clip
+        self.w_action_mapping = w_action_mapping
+        self.obs_rms = RunningMeanStd(state_dim) if obs_norm_enabled else None
 
         if self.device.type == 'cuda':
             self.gpu_used = True
@@ -279,7 +267,8 @@ class SAC:
             
         self.actor = actor_model(state_dim=state_dim, action_dim=action_dim,
                                  actor_linear_layers=actor_linear_layers,
-                                N_t=self.N_t, K=self.K, P_max=self.P_max).to(self.device)
+                                N_t=self.N_t, K=self.K, P_max=self.P_max,
+                                w_action_mapping=self.w_action_mapping).to(self.device)
 
         # Two Q-networks for SAC
         self.critic1 = critic_model(state_dim, action_dim, critic_linear_layers=critic_linear_layers).to(self.device)
@@ -350,6 +339,7 @@ class SAC:
         self.actor.eval()
         
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        state = self._normalize_state_tensor(state, update_stats=False)
         
         if eval_mode:
             # Deterministic action for evaluation
@@ -368,6 +358,7 @@ class SAC:
         """
         self.actor.eval()
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        state = self._normalize_state_tensor(state, update_stats=False)
         with torch.no_grad():
             action, _, _ = self.actor.sample(state)
         action = action.detach().squeeze(0)
@@ -393,6 +384,74 @@ class SAC:
             dummy_indices = np.arange(batch_size)
             return (*batch, dummy_weights, dummy_indices)
 
+    def _normalize_state_tensor(self, state_tensor, update_stats=False):
+        """Normalize states with running statistics when enabled."""
+        if not self.obs_norm_enabled:
+            return state_tensor
+        if update_stats:
+            self.obs_rms.update(state_tensor.detach().cpu().numpy())
+        mean = torch.as_tensor(self.obs_rms.mean, device=state_tensor.device, dtype=state_tensor.dtype)
+        var = torch.as_tensor(self.obs_rms.var, device=state_tensor.device, dtype=state_tensor.dtype)
+        normalized = (state_tensor - mean) / torch.sqrt(var + 1e-8)
+        return torch.clamp(normalized, -self.obs_norm_clip, self.obs_norm_clip)
+
+    def _compute_state_diagnostics(self, states, actions):
+        """Compute diagnostics to quantify effective state usage."""
+        diagnostics = {}
+        with torch.no_grad():
+            diagnostics["state_std_mean"] = float(states.std(dim=0).mean().detach().cpu())
+            diagnostics["state_std_max"] = float(states.std(dim=0).max().detach().cpu())
+            centered_state = states - states.mean(dim=0, keepdim=True)
+            centered_action = actions - actions.mean(dim=0, keepdim=True)
+            covariance = centered_state.T @ centered_action / max(1, states.shape[0] - 1)
+            diagnostics["state_action_cov_mean_abs"] = float(covariance.abs().mean().detach().cpu())
+            block_slices = self._estimate_state_blocks(states.shape[1])
+            for block_name, block_slice in block_slices.items():
+                if block_slice.stop > block_slice.start:
+                    block_std = states[:, block_slice].std(dim=0).mean()
+                    diagnostics[f"state_block_std_{block_name}"] = float(block_std.detach().cpu())
+
+        state_for_grad = states.detach().clone().requires_grad_(True)
+        diag_actions, _, _ = self.actor.sample(state_for_grad)
+        q_values = self.critic1(state_for_grad, diag_actions)
+        grad = torch.autograd.grad(
+            outputs=q_values.mean(),
+            inputs=state_for_grad,
+            retain_graph=False,
+            create_graph=False,
+            allow_unused=False,
+        )[0]
+        diagnostics["dq_ds_norm_mean"] = float(grad.norm(dim=-1).mean().detach().cpu())
+        diagnostics["dq_ds_norm_max"] = float(grad.norm(dim=-1).max().detach().cpu())
+        return diagnostics
+
+    def _estimate_state_blocks(self, state_dim):
+        """Infer standard block boundaries from known dimensional constraints."""
+        m_dim = max(0, (self.action_dim - 2 * self.N_t * self.K) // 2)
+        fixed_tail = m_dim + self.action_dim + 4 * self.K
+        remaining = max(0, state_dim - fixed_tail)
+        prev_rate_candidates = [4, 4 * self.K + 3]
+        prev_rate_dim = 0
+        for candidate in prev_rate_candidates:
+            if remaining - candidate >= 0:
+                prev_rate_dim = candidate
+                break
+        channel_dim = max(0, remaining - prev_rate_dim)
+
+        idx = 0
+        blocks = {
+            "rates": slice(idx, idx + prev_rate_dim),
+        }
+        idx += prev_rate_dim
+        blocks["channels"] = slice(idx, idx + channel_dim)
+        idx += channel_dim
+        blocks["phases"] = slice(idx, idx + m_dim)
+        idx += m_dim
+        blocks["prev_action"] = slice(idx, idx + self.action_dim)
+        idx += self.action_dim
+        blocks["powers"] = slice(idx, min(state_dim, idx + 4 * self.K))
+        return blocks
+
     def _calculate_td_errors(self, states, actions, rewards, next_states, q1_values, q2_values):
         """
         Calculates TD errors for priority updates in PER.
@@ -402,7 +461,12 @@ class SAC:
             target_q1 = self.target_critic1(next_states, next_actions)
             target_q2 = self.target_critic2(next_states, next_actions)
             target_q = torch.min(target_q1, target_q2) - self.alpha * next_log_probs
-            target_values = rewards + self.gamma * target_q
+            if self.target_q_clip is not None:
+                target_q = torch.clamp(target_q, -self.target_q_clip, self.target_q_clip)
+            clipped_rewards = rewards
+            if self.reward_clip is not None:
+                clipped_rewards = torch.clamp(clipped_rewards, -self.reward_clip, self.reward_clip)
+            target_values = clipped_rewards + self.gamma * target_q
             
             # Calculate TD errors for both critics (use minimum for priority)
             td_error1 = torch.abs(q1_values - target_values)
@@ -417,6 +481,7 @@ class SAC:
         """
         self.actor.train()
         self.total_it += 1
+        target_q_mean = float("nan")
         
         if self.gpu_used:
             self.actor.to(self.device)
@@ -433,6 +498,10 @@ class SAC:
             if self.use_per:
                 weights = weights.to(self.device, non_blocking=True)
 
+        # Observation normalization shared by actor/critics.
+        state = self._normalize_state_tensor(state, update_stats=True)
+        next_state = self._normalize_state_tensor(next_state, update_stats=True)
+
         # Update Critics
         if self.total_it % self.critic_frequency_update == 0:
             updated_critic = True
@@ -441,9 +510,15 @@ class SAC:
                 target_q1 = self.target_critic1(next_state, next_actions)
                 target_q2 = self.target_critic2(next_state, next_actions)
                 target_q = torch.min(target_q1, target_q2) - self.alpha * next_log_probs
+                if self.target_q_clip is not None:
+                    target_q = torch.clamp(target_q, -self.target_q_clip, self.target_q_clip)
+                target_q_mean = float(target_q.mean().detach().cpu())
                 # Optional done masking; if not available, assume zeros
                 dones = torch.zeros_like(rewards)
-                y = rewards + self.gamma * (1 - dones) * target_q
+                clipped_rewards = rewards
+                if self.reward_clip is not None:
+                    clipped_rewards = torch.clamp(clipped_rewards, -self.reward_clip, self.reward_clip)
+                y = clipped_rewards + self.gamma * (1 - dones) * target_q
 
             if self.using_loss_scaling and self.scaler:
                 with amp.autocast():
@@ -460,10 +535,14 @@ class SAC:
 
                 self.critic1_optimizer.zero_grad()
                 self.scaler.scale(critic1_loss).backward()
+                self.scaler.unscale_(self.critic1_optimizer)
+                torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), self.gradient_clip_norm)
                 self.scaler.step(self.critic1_optimizer)
 
                 self.critic2_optimizer.zero_grad()
                 self.scaler.scale(critic2_loss).backward()
+                self.scaler.unscale_(self.critic2_optimizer)
+                torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), self.gradient_clip_norm)
                 self.scaler.step(self.critic2_optimizer)
                 self.scaler.update()
             else:
@@ -481,10 +560,12 @@ class SAC:
 
                 self.critic1_optimizer.zero_grad()
                 critic1_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), self.gradient_clip_norm)
                 self.critic1_optimizer.step()
 
                 self.critic2_optimizer.zero_grad()
                 critic2_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), self.gradient_clip_norm)
                 self.critic2_optimizer.step()
 
             # Update priorities if using PER
@@ -499,8 +580,10 @@ class SAC:
             with torch.no_grad():
                 q1_values = self.critic1(state, actions)
                 q2_values = self.critic2(state, actions)
-                critic1_loss = F.mse_loss(q1_values, y if 'y' in locals() else rewards)
-                critic2_loss = F.mse_loss(q2_values, y if 'y' in locals() else rewards)
+                # NOTE: When critic is not being updated, we compute a diagnostic loss
+                # against rewards only (no Bellman target) for logging purposes.
+                critic1_loss = F.mse_loss(q1_values, rewards)
+                critic2_loss = F.mse_loss(q2_values, rewards)
             update_target_critics = False
 
         # Update Actor
@@ -520,10 +603,13 @@ class SAC:
             if self.using_loss_scaling and self.scaler:
                 self.actor_optimizer.zero_grad()
                 self.scaler.scale(actor_loss).backward()
+                self.scaler.unscale_(self.actor_optimizer)
+                torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.gradient_clip_norm)
                 self.scaler.step(self.actor_optimizer)
             else:
                 self.actor_optimizer.zero_grad()
                 actor_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.gradient_clip_norm)
                 self.actor_optimizer.step()
 
             # Update temperature parameter
@@ -559,7 +645,24 @@ class SAC:
             actor_loss = actor_loss.to('cpu')
             critic1_loss = critic1_loss.to('cpu')
 
+        alpha_value = float(self.alpha.detach().cpu()) if isinstance(self.alpha, torch.Tensor) else float(self.alpha)
+        self.last_training_stats = {
+            "alpha": alpha_value,
+            "log_prob_mean": float(log_probs.mean().detach().cpu()),
+            "q1_mean": float(q1_values.mean().detach().cpu()),
+            "q2_mean": float(q2_values.mean().detach().cpu()),
+            "q_new_mean": float(q_new.mean().detach().cpu()),
+            "target_q_mean": target_q_mean,
+            "action_norm_mean": float(new_actions.norm(dim=-1).mean().detach().cpu()),
+        }
+        if self.total_it % 50 == 0:
+            self.last_training_stats.update(self._compute_state_diagnostics(state, actions))
+
         return float(actor_loss.detach().cpu()), float(critic1_loss.detach().cpu()), rewards, updated_actor, updated_critic
+
+    def get_last_training_stats(self):
+        """Returns lightweight diagnostics from the last training step."""
+        return dict(self.last_training_stats)
 
     def update_target_networks(self, update_target_critics=True):
         """
@@ -581,6 +684,9 @@ class SAC:
         """
         Stores a transition in the replay buffer.
         """
+        if self.obs_norm_enabled:
+            self.obs_rms.update(np.asarray(state, dtype=np.float32))
+            self.obs_rms.update(np.asarray(next_state, dtype=np.float32))
         self.replay_buffer.add(state, action, reward, next_state, batch_size=batch_size)
 
     def get_buffer_info(self):

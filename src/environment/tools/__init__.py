@@ -6,4 +6,12 @@ from .utils import parse_args, parse_config, get_root_dir, select_functions
 
 from .position_generator import PositionGenerator
 
-from .task_manager import TaskManager
+from .task_manager import (
+    TaskManager,
+    DifficultyLevel,
+    Outcome,
+    DifficultyConfig,
+    EpisodeDifficultyConfig,
+    create_default_difficulty_configs,
+    validate_difficulty_configs,
+)

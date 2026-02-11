@@ -25,6 +25,7 @@ from .replay_buffer import (
     SequencePrioritizedReplayBuffer
 )
 from .rnn_networks import RNNActorNetwork, RNNCriticNetwork
+from src.environment.ris_modules import process_raw_actions_torch
 import os
 
 
@@ -212,7 +213,10 @@ class TD3_RNN:
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action, new_hidden_states = self.actor(state, hidden_states)
+            raw_action, new_hidden_states = self.actor(state, hidden_states)
+            action = process_raw_actions_torch(
+                raw_action, self.N_t, self.K, self.P_max, self.device
+            )
             # Store hidden states internally for next call
             self.actor.set_hidden_states(new_hidden_states)
             return action.squeeze(0).cpu()
@@ -232,10 +236,14 @@ class TD3_RNN:
         noise = torch.tensor(noise_np, dtype=torch.float32, device=self.device)
         raw_action_noised = raw_action + noise
 
-        # Process actions
+        # Process actions via environment module
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(raw_action_noised.unsqueeze(0)).squeeze(0)
-            clean_action = self.actor.actor_process_raw_actions(raw_action.unsqueeze(0)).squeeze(0)
+            noised_action = process_raw_actions_torch(
+                raw_action_noised.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
+            clean_action = process_raw_actions_torch(
+                raw_action.unsqueeze(0), self.N_t, self.K, self.P_max, self.device
+            ).squeeze(0)
 
         return clean_action.cpu(), noised_action.cpu()
 
@@ -252,7 +260,10 @@ class TD3_RNN:
     def _calculate_td_errors(self, states, actions, rewards, next_states, q1_values, q2_values):
         """Calculates TD errors for priority updates in PER."""
         with torch.no_grad():
-            target_actions, _ = self.target_actor(next_states)
+            target_raw, _ = self.target_actor(next_states)
+            target_actions = process_raw_actions_torch(
+                target_raw, self.N_t, self.K, self.P_max, self.device
+            )
             target_q1, _ = self.target_critic_1(next_states, target_actions)
             target_q2, _ = self.target_critic_2(next_states, target_actions)
             target_q_values = torch.min(target_q1, target_q2)
@@ -291,7 +302,10 @@ class TD3_RNN:
 
         # Compute target values
         with torch.no_grad():
-            target_actions, _ = self.target_actor(next_state)
+            target_raw, _ = self.target_actor(next_state)
+            target_actions = process_raw_actions_torch(
+                target_raw, self.N_t, self.K, self.P_max, self.device
+            )
             target_q1, _ = self.target_critic_1(next_state, target_actions)
             target_q2, _ = self.target_critic_2(next_state, target_actions)
             target_q_values = torch.min(target_q1, target_q2)
@@ -367,7 +381,10 @@ class TD3_RNN:
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
                 with amp.autocast(self.device_string):
-                    actor_actions, _ = self.actor(state)
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values, _ = self.critic_1(state, actor_actions)
                     
                     # Apply importance sampling weights if using PER
@@ -385,7 +402,10 @@ class TD3_RNN:
                 updated_actor = False
                 with torch.no_grad():
                     with amp.autocast(self.device_string):
-                        actor_actions, _ = self.actor(state)
+                        actor_raw, _ = self.actor(state)
+                        actor_actions = process_raw_actions_torch(
+                            actor_raw, self.N_t, self.K, self.P_max, self.device
+                        )
                         actor_q_values, _ = self.critic_1(state, actor_actions)
                         
                         if self.use_per:
@@ -440,7 +460,10 @@ class TD3_RNN:
             # Update Actor
             if self.total_it % self.actor_frequency_update == 0:
                 updated_actor = True
-                actor_actions, _ = self.actor(state)
+                actor_raw, _ = self.actor(state)
+                actor_actions = process_raw_actions_torch(
+                    actor_raw, self.N_t, self.K, self.P_max, self.device
+                )
                 actor_q_values, _ = self.critic_1(state, actor_actions)
                 
                 # Apply importance sampling weights if using PER
@@ -456,7 +479,10 @@ class TD3_RNN:
             else:
                 updated_actor = False
                 with torch.no_grad():
-                    actor_actions, _ = self.actor(state)
+                    actor_raw, _ = self.actor(state)
+                    actor_actions = process_raw_actions_torch(
+                        actor_raw, self.N_t, self.K, self.P_max, self.device
+                    )
                     actor_q_values, _ = self.critic_1(state, actor_actions)
                     
                     if self.use_per:

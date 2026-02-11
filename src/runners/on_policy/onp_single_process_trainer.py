@@ -144,8 +144,12 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             user_limits=grid_limit,
             RIS_position=env_config.get("RIS_position"),
             downlink_uplink_eavesdropper_bools=[downlink_activated, uplink_activated, using_eavesdropper],
-            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.5, 0.5]),
-            random_seed=training_config.get("Task_Manager_random_seed", 126)
+            thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.25, 0.25, 0.25]),
+            eavesdropper_thresholds=training_config.get(
+                "Curriculum_Learning_Eavesdropper_Thresholds", None
+            ),
+            random_seed=training_config.get("Task_Manager_random_seed", 126),
+            num_environments=1
         )
 
     # Rollout buffer configuration
@@ -333,13 +337,6 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                 writer.add_scalar("Training/Critic loss (per update)", critic_loss, total_steps)
                 writer.add_scalar("Training/Mean reward from rollout", mean_reward, total_steps)
 
-                # Reset rollout buffer
-                try:
-                    network.rollout.reset()
-                except Exception:
-                    if hasattr(network.rollout, 'ptr'):
-                        network.rollout.ptr = 0
-
             # NOTE: Log training information at specified frequency
             if (total_steps + 1) % frequency_information == 0 and num_step > 0:
                 W = training_envs.get_W()
@@ -473,10 +470,35 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             network.save_models(ckpt_dir)
             logger.info(f"Saved checkpoint for episode {episode}")
 
+        # NOTE: Update curriculum progression and emit change notifications
+        if curriculum_learning:
+            previous_max_level = int(Task_Manager.current_max_level)
+            if using_eavesdropper:
+                episodes_outcomes = Task_Manager.compute_episodes_outcome(
+                    downlink_sum=training_envs.get_downlink_sum_for_success_conditions(),
+                    uplink_sum=training_envs.get_uplink_sum_for_success_conditions(),
+                    best_eavesdropper_sum=training_envs.get_best_eavesdropper_sum_for_success_conditions(),
+                )
+            else:
+                episodes_outcomes = Task_Manager.compute_episodes_outcome(
+                    downlink_sum=training_envs.get_downlink_sum_for_success_conditions(),
+                    uplink_sum=training_envs.get_uplink_sum_for_success_conditions(),
+                )
+            Task_Manager.update_episode_outcomes(episodes_outcomes)
+            current_max_level = int(Task_Manager.current_max_level)
+            if current_max_level != previous_max_level:
+                curriculum_change_message = (
+                    f"[CURRICULUM] Max difficulty level changed: "
+                    f"{previous_max_level} -> {current_max_level}"
+                )
+                tqdm.write(curriculum_change_message)
+                logger.info(curriculum_change_message)
+
         # Create and display episode summary messages
         episode_max_instant_reward_reached = max(instant_user_rewards) if len(valid_rewards) > 0 else 0.0
         best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)] if len(valid_rewards) > 0 else 0.0
         best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper and len(valid_rewards) > 0 else None
+        curriculum_max_level = int(Task_Manager.current_max_level) if curriculum_learning else None
         
         console_message, log_message = create_episode_summary_messages(
             episode=episode,
@@ -494,7 +516,8 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
             additional_information_best_case=additional_information_best_case,
             using_eavesdropper=using_eavesdropper,
             avg_eaves_reward=avg_eaves_reward if using_eavesdropper else None,
-            best_eaves_reward=best_eaves_reward
+            best_eaves_reward=best_eaves_reward,
+            curriculum_max_level=curriculum_max_level
         )
         
         tqdm.write(console_message)
@@ -505,6 +528,8 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
         writer.add_scalar("General/Time per episode", time.time() - start_episode_time, episode)
         writer.add_scalar("Rewards/Mean average reward", np.mean(average_reward_per_env[:episode+1]), episode)
         writer.add_scalar("Rewards/Best average reward per episode", best_average_reward, episode)
+        if curriculum_learning:
+            writer.add_scalar("Curriculum/Current max difficulty level", int(Task_Manager.current_max_level), episode)
 
         if using_eavesdropper:
             writer.add_scalar("General/Mean total SSR per episode", np.mean(instant_user_rewards + instant_eavesdropper_rewards), episode)
@@ -552,7 +577,7 @@ def onp_single_process_trainer(training_envs, network, training_config, log_dir,
                     episode_user_rewards[num_step] = reward_value
                     episode_user_fairness[num_step] = fairness_value
 
-                    if eval_env.is_done():
+                    if hasattr(eval_env, 'is_done') and eval_env.is_done():
                         break
 
                 # Store per-episode metrics

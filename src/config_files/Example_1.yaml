@@ -52,6 +52,8 @@ Training_parameters:
   batch_size: 96
   frequency_information: 500
   network_save_checkpoint_frequency: 500
+  Curriculum_Learning_Thresholds: [0.5, 0.5] # [downlink_threshold, uplink_threshold]
+  Curriculum_Learning_Eavesdropper_Thresholds: [0.5, 0.5] # [eaves_downlink_threshold, eaves_uplink_threshold]
   n_rollout_threads: 1
   n_training_threads: 1
   conduct_evaluation: False

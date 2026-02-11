@@ -101,6 +101,36 @@ def setup_logger(log_dir, log_filename='training.log'):
     return logger
 
 
+def should_emit_replay_buffer_summary(
+    buffer_current_size,
+    replay_progress_target,
+    last_logged_quarter,
+    episodes_since_full_summary,
+    post_fill_episode_log_interval,
+):
+    """
+    Return whether to emit an episode summary based on replay fill progress.
+
+    Logs once at each 25% milestone during fill-up, then sparsely after 100%.
+    """
+    if replay_progress_target <= 0:
+        return True, last_logged_quarter, episodes_since_full_summary
+
+    post_fill_episode_log_interval = max(1, int(post_fill_episode_log_interval))
+    current_fullness = min(buffer_current_size / replay_progress_target, 1.0)
+    current_quarter = int(current_fullness * 4)
+
+    if current_quarter > last_logged_quarter:
+        return True, current_quarter, 0 if current_quarter >= 4 else episodes_since_full_summary
+
+    if current_quarter >= 4:
+        episodes_since_full_summary += 1
+        if episodes_since_full_summary >= post_fill_episode_log_interval:
+            return True, last_logged_quarter, 0
+
+    return False, last_logged_quarter, episodes_since_full_summary
+
+
 def ofp_single_process_trainer(training_envs, network, training_config, log_dir, writer,
                            eval_env=None, action_noise_activated=False,
                            batch_instead_of_buff=False, use_rendering=False):
@@ -163,6 +193,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
     # Environment metadata
     num_users = training_envs.num_users
     using_eavesdropper = (training_envs.num_eavesdroppers > 0)
+    
 
     # Curriculum learning setup
     if curriculum_learning:
@@ -175,22 +206,32 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             num_steps_per_episode=max_num_step_per_episode,
             user_limits=grid_limit,
             RIS_position=env_config.get("RIS_position"),
+            Buffer_Size = 50,
             downlink_uplink_eavesdropper_bools=[downlink_activated, uplink_activated, using_eavesdropper],
             thresholds=training_config.get("Curriculum_Learning_Thresholds", [0.5, 0.5]),
+            eavesdropper_thresholds=training_config.get(
+                "Curriculum_Learning_Eavesdropper_Thresholds", None
+            ),
             random_seed=training_config.get("Task_Manager_random_seed", 126)
         )
 
     # Buffer configuration
     buffer_size = deepcopy(batch_size) if batch_instead_of_buff else network.replay_buffer.buffer_size
+    warmup_steps = training_config.get("warmup_steps", max(2000, 10 * batch_size))
+    training_start_size = max(buffer_size, warmup_steps)
     buffer_number_of_required_episode = buffer_size // max_num_step_per_episode
     if buffer_number_of_required_episode == 0:
         buffer_number_of_required_episode = 1
     buffer_smaller_than_one_episode = (buffer_size // max_num_step_per_episode < 1)
     length_episode_rb_matching = ((buffer_size % max_num_step_per_episode) == 0)
+    post_fill_episode_log_interval = training_config.get("post_fill_episode_log_interval", 10)
+    replay_progress_target = max(1, training_start_size)
 
     # Training state tracking
     buffer_filled = False
     index_episode_buffer_filled = None
+    last_logged_replay_quarter = 0
+    episodes_since_full_summary = 0
     best_average_reward = 0
     optim_steps_actor = 0
     optim_steps_critic = 0
@@ -491,8 +532,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
             if not buffer_filled:
                     index_episode_buffer_filled = episode
                     
-            # Perform network training if replay buffer is sufficiently filled
-            if network.replay_buffer.size >= buffer_size:
+            # Perform network training only after explicit warmup threshold is reached.
+            if network.replay_buffer.size >= training_start_size:
                 if not buffer_filled:
                     index_episode_buffer_filled = episode
                     buffer_filled = True
@@ -542,18 +583,23 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
                 # Execute network training step
                 training_time_1 = time.time()
-                actor_loss, critic_loss, _, updated_actor, updated_critic = network.training(batch_size=batch_size)
-                training_time_2 = time.time()
                 
+                # NOTE: Different algorithms return different training outputs
+                # SAC/TD3 return: (actor_loss, critic_loss, rewards, updated_actor, updated_critic)
+                actor_loss, critic_loss, _, updated_actor, updated_critic = network.training(batch_size=batch_size)
+                training_stats = {}
+                if hasattr(network, "get_last_training_stats"):
+                    training_stats = network.get_last_training_stats()
+                    
                 # Track optimization steps and timing
                 if updated_actor:
                     avg_actor_loss += actor_loss
                     optim_steps_actor_ep += 1
-                    step_time_list.append(training_time_2 - training_time_1)
+                    step_time_list.append(time.time() - training_time_1)
 
-                if updated_critic:
-                    avg_critic_loss += critic_loss
-                    optim_steps_critic_ep += 1
+                    if updated_critic:
+                        avg_critic_loss += critic_loss
+                        optim_steps_critic_ep += 1
 
 
                 # Log detailed metrics for single episode runs
@@ -646,10 +692,25 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                             current_avg_critic_loss = avg_critic_loss / optim_steps_critic_ep
                         else:
                             current_avg_critic_loss = 0
+                        
                         writer.add_scalar("Actor Loss/Instant actor loss", actor_loss, current_step)
                         writer.add_scalar("Actor Loss/Current average actor loss", current_avg_actor_loss, current_step)
                         writer.add_scalar("Critic Loss/Instant critic loss", critic_loss, current_step)
                         writer.add_scalar("Critic Loss/Current average critic loss", current_avg_critic_loss, current_step)
+                        if training_stats:
+                            writer.add_scalar("SAC/Alpha", training_stats.get("alpha", 0.0), current_step)
+                            writer.add_scalar("SAC/LogProb Mean", training_stats.get("log_prob_mean", 0.0), current_step)
+                            writer.add_scalar("SAC/Q1 Mean", training_stats.get("q1_mean", 0.0), current_step)
+                            writer.add_scalar("SAC/Q2 Mean", training_stats.get("q2_mean", 0.0), current_step)
+                            writer.add_scalar("SAC/Q New Mean", training_stats.get("q_new_mean", 0.0), current_step)
+                            writer.add_scalar("SAC/Target Q Mean", training_stats.get("target_q_mean", 0.0), current_step)
+                            writer.add_scalar("SAC/Action Norm Mean", training_stats.get("action_norm_mean", 0.0), current_step)
+                            for key, value in training_stats.items():
+                                if key in {"alpha", "log_prob_mean", "q1_mean", "q2_mean", "q_new_mean", "target_q_mean", "action_norm_mean"}:
+                                    continue
+                                if isinstance(value, (int, float, np.floating)):
+                                    writer.add_scalar(f"Diagnostics/{key}", value, current_step)
+                        
                         writer.add_scalar("Fairness/User local average Fairness", local_user_fairness, current_step)
                         
                         # Log system performance metrics
@@ -670,13 +731,17 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                                                 instant_eavesdropper_rewards[num_step + 1 - frequency_information: num_step], current_step)
 
                         # Create detailed training progress message
+                        loss_info = (
+                                f" |--> EPISODE AVERAGE ACTOR LOSS {current_avg_actor_loss}, EPISODE AVERAGE CRITIC LOSS {current_avg_critic_loss}\n"
+                            )
+                        
                         message = (
                             f"\n|--> TRAINING EPISODE {episode - index_episode_buffer_filled}, STEP {num_step + 1}\n"
-                            f"     |--> Training the Actor NN takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
+                            f"     |--> Training the Network takes {np.mean(step_time_list):.4f} sec on average across {len(step_time_list)} steps \n"
                             f"  |--> LOCAL AVERAGE REWARD {np.float16(local_average_reward)}, MAX INSTANT REWARD REACHED {np.max(instant_user_rewards)}\n"
                             f"  |--> LOCAL AVERAGE BASIC REWARD {np.float16(local_average_basic_reward)}, MAXIMUM INSTANT BASIC REWARD: {basic_reward_episode[np.argmax(instant_user_rewards)]:.4f}\n"
                             f"  |--> Detailed basic reward for best case: {additional_information_best_case}\n"
-                            f" |--> EPISODE AVERAGE ACTOR LOSS {current_avg_actor_loss}, EPISODE AVERAGE CRITIC LOSS {current_avg_critic_loss}\n"
+                            f"{loss_info}"
                             f" |--> USER FAIRNESS FOR THE BEST INSTANT REWARD {instant_user_jain_fairness[np.argmax(instant_user_rewards)]}, LOCAL USER FAIRNESS {local_user_fairness}\n"
                             f" |--> POWER DEPLOYED: {total_power_deployed:,.4f} Watts"
                             f"---------------------------\n"
@@ -860,6 +925,7 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
             # Update curriculum learning based on episode outcomes
             if curriculum_learning:
+                previous_max_level = int(Task_Manager.current_max_level)
                 if using_eavesdropper:
                     episodes_outcomes = Task_Manager.compute_episodes_outcome(
                         downlink_sum=training_envs.get_downlink_sum_for_success_conditions(),
@@ -872,32 +938,52 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
                         uplink_sum=training_envs.get_uplink_sum_for_success_conditions()
                     )
                 Task_Manager.update_episode_outcomes(episodes_outcomes)
+                current_max_level = int(Task_Manager.current_max_level)
+                if current_max_level != previous_max_level:
+                    curriculum_change_message = (
+                        f"[CURRICULUM] Max difficulty level changed: "
+                        f"{previous_max_level} -> {current_max_level}"
+                    )
+                    tqdm.write(curriculum_change_message)
+                    logger.info(curriculum_change_message)
 
-            # Create and display episode summary messages
-            episode_offset = episode - index_episode_buffer_filled
-            best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)]
-            best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper else None
-            
-            console_message, log_message = create_episode_summary_messages(
-                episode=episode,
-                episode_offset=episode_offset,
-                optim_steps=optim_steps_actor,
-                users_position=users_position,
-                eavesdroppers_positions=eavesdroppers_positions,
-                avg_reward=avg_reward,
-                max_reward=episode_max_instant_reward_reached,
-                avg_fairness=avg_fairness,
-                best_fairness=best_fairness,
-                avg_actor_loss=avg_actor_loss,
-                avg_critic_loss=avg_critic_loss,
-                basic_reward_episode=basic_reward_episode,
-                instant_user_rewards=instant_user_rewards,
-                additional_information_best_case=additional_information_best_case,
-                using_eavesdropper=using_eavesdropper,
-                avg_eavesdropper_reward=avg_eavesdropper_reward if using_eavesdropper else None,
-                best_eaves_reward=best_eaves_reward
+        # Create and display episode summary messages
+        episode_offset = episode - index_episode_buffer_filled
+        best_fairness = instant_user_jain_fairness[np.argmax(instant_user_rewards)]
+        best_eaves_reward = instant_eavesdropper_rewards[np.argmax(instant_user_rewards)] if using_eavesdropper else None
+        curriculum_max_level = int(Task_Manager.current_max_level) if curriculum_learning else None
+        
+        console_message, log_message = create_episode_summary_messages(
+            episode=episode,
+            episode_offset=episode_offset,
+            optim_steps=optim_steps_actor,
+            users_position=users_position,
+            eavesdroppers_positions=eavesdroppers_positions,
+            avg_reward=avg_reward,
+            max_reward=episode_max_instant_reward_reached,
+            avg_fairness=avg_fairness,
+            best_fairness=best_fairness,
+            avg_actor_loss=avg_actor_loss,
+            avg_critic_loss=avg_critic_loss,
+            basic_reward_episode=basic_reward_episode,
+            instant_user_rewards=instant_user_rewards,
+            additional_information_best_case=additional_information_best_case,
+            using_eavesdropper=using_eavesdropper,
+            avg_eavesdropper_reward=avg_eavesdropper_reward if using_eavesdropper else None,
+            best_eaves_reward=best_eaves_reward,
+            curriculum_max_level=curriculum_max_level
+        )
+
+        should_log_summary, last_logged_replay_quarter, episodes_since_full_summary = (
+            should_emit_replay_buffer_summary(
+                buffer_current_size=network.replay_buffer.size,
+                replay_progress_target=replay_progress_target,
+                last_logged_quarter=last_logged_replay_quarter,
+                episodes_since_full_summary=episodes_since_full_summary,
+                post_fill_episode_log_interval=post_fill_episode_log_interval,
             )
-            
+        )
+        if should_log_summary:
             tqdm.write(console_message)
             logger.verbose(log_message)
 
@@ -920,6 +1006,8 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
         # Log loss metrics
         writer.add_scalar("Actor Loss/Average actor Loss per episode", avg_actor_loss, episode)
         writer.add_scalar("Critic Loss/Average critic Loss per episode", avg_critic_loss, episode)
+        if curriculum_learning:
+            writer.add_scalar("Curriculum/Current max difficulty level", int(Task_Manager.current_max_level), episode)
 
         # Log eavesdropper metrics if applicable
         if using_eavesdropper:
@@ -1041,7 +1129,10 @@ def ofp_single_process_trainer(training_envs, network, training_config, log_dir,
 
                     # Get current state and select action (no exploration noise)
                     state = eval_env.get_states()[0] if num_step == 0 else next_state[0]
+                    
+                    # Select action
                     selected_action = network.select_action(state)
+                    
                     state, selected_action, reward, next_state = eval_env.step(state, selected_action)
 
                     # Process reward and fairness information

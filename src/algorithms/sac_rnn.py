@@ -25,6 +25,7 @@ from .replay_buffer import (
     SequencePrioritizedReplayBuffer
 )
 from .rnn_networks import RNNActorNetworkSAC, RNNCriticNetwork
+from src.environment.ris_modules import process_raw_actions_torch
 import numpy as np
 import os
 
@@ -249,10 +250,16 @@ class SAC_RNN:
         noised_mean = mean + noise
         clean_mean = mean
 
-        # Process actions
+        # Process actions via environment module (tanh then constrain)
         with torch.no_grad():
-            noised_action = self.actor.actor_process_raw_actions(noised_mean)
-            clean_action = self.actor.actor_process_raw_actions(clean_mean)
+            noised_raw = torch.tanh(noised_mean)
+            clean_raw = torch.tanh(clean_mean)
+            noised_action = process_raw_actions_torch(
+                noised_raw, self.N_t, self.K, self.P_max, self.device
+            )
+            clean_action = process_raw_actions_torch(
+                clean_raw, self.N_t, self.K, self.P_max, self.device
+            )
 
         return clean_action.squeeze(0).cpu(), noised_action.squeeze(0).cpu()
 

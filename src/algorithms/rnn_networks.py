@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Optional, Tuple, Union
+from src.environment.ris_modules import process_raw_actions_torch
 
 
 class RNNActorNetwork(nn.Module):
@@ -60,8 +61,6 @@ class RNNActorNetwork(nn.Module):
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
-        self.tensored_P_max = torch.tensor(P_max)
-        self.numpied_P_max = self.tensored_P_max.detach().numpy()
         self.rnn_type = rnn_type.lower()
         self.rnn_hidden_size = rnn_hidden_size
         self.rnn_num_layers = rnn_num_layers
@@ -93,7 +92,6 @@ class RNNActorNetwork(nn.Module):
         
         # Output layer
         self.output = nn.Linear(actor_linear_layers[-1], action_dim)
-        self.batch_norm = nn.BatchNorm1d(action_dim)
         
         # Initialize hidden states with caching
         self.hidden_states = None
@@ -140,81 +138,6 @@ class RNNActorNetwork(nn.Module):
                 self.hidden_states = hidden_states.detach()
         else:
             self.hidden_states = None
-    
-    def actor_W_projection_operator(self, raw_W):
-        """
-         projection operator with reduced memory allocations.
-        """
-        # Ensure float type
-        raw_W = raw_W.detach()
-
-        # Frobenius norms for each matrix in the batch
-        frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
-
-        # Traces of (W * W^H) -  computation
-        traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
-
-        # Mask of matrices exceeding power constraint
-        exceed_mask = traces > self.tensored_P_max
-
-        # Scaling factors - vectorized operation
-        scaling_factors = torch.where(
-            exceed_mask,
-            (self.tensored_P_max.sqrt() / frobenius_norms),
-            torch.ones_like(frobenius_norms)
-        )
-
-        # Reshape scaling factors for broadcasting
-        scaling_factors = scaling_factors.view(-1, 1, 1)
-
-        # Apply scaling
-        projected_W = raw_W * scaling_factors
-
-        return projected_W
-    
-    def actor_process_raw_actions(self, raw_actions):
-        """
-         action processing with reduced memory allocations.
-        """
-        batch_size = raw_actions.shape[0]
-        
-        # Pre-allocate output tensor
-        actions = torch.zeros_like(raw_actions)
-
-        # Splitting raw actions into W-related and Theta-related components
-        W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]
-        theta_actions = raw_actions[:, 2 * self.N_t * self.K:]
-
-        # Process Theta actions - 
-        theta_real = theta_actions[:, 0::2]
-        theta_imag = theta_actions[:, 1::2]
-        magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)
-
-        # Avoid division by zero - vectorized
-        magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
-        normalized_theta_real = theta_real / magnitudes
-        normalized_theta_imag = theta_imag / magnitudes
-
-        # Store normalized Theta components in actions
-        actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
-        actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
-
-        # Process W actions - 
-        W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)
-        W_real = W_raw_actions[:, :, 0::2]
-        W_imag = W_raw_actions[:, :, 1::2]
-        raw_W = W_real + 1j * W_imag
-
-        # Project W onto the power constraint set
-        W = self.actor_W_projection_operator(raw_W)
-
-        # Store processed W components in actions -  indexing
-        flattened_real = W.real.flatten(start_dim=1)
-        flattened_imag = W.imag.flatten(start_dim=1)
-        actions[:, :2 * self.N_t * self.K:2] = flattened_real
-        actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
-
-        return actions
     
     def _initialize_hidden_states(self, batch_size, device):
         """Initialize hidden states with caching."""
@@ -278,19 +201,13 @@ class RNNActorNetwork(nn.Module):
         for layer in self.linear_layers:
             rnn_output = F.relu(layer(rnn_output))
         
-        # Output layer
+        # Output layer: raw tanh output (processing applied externally)
         rnn_output = F.tanh(self.output(rnn_output))
-        rnn_output = self.batch_norm(rnn_output)
         
-        # Process raw actions
-        processed_actions = self.actor_process_raw_actions(rnn_output)
-        
-        return processed_actions, new_hidden_states
+        return rnn_output, new_hidden_states
     
     def forward_raw(self, x, hidden_states=None):
-        """
-         forward pass without applying actor_process_raw_actions.
-        """
+        """Forward pass returning raw actions (alias for forward)."""
         # Handle single-step input by adding sequence dimension
         if x.dim() == 2:
             x = x.unsqueeze(1)
@@ -326,7 +243,6 @@ class RNNActorNetwork(nn.Module):
         
         # Output layer (raw tanh output)
         rnn_output = torch.tanh(self.output(rnn_output))
-        rnn_output = self.batch_norm(rnn_output)
         
         return rnn_output, new_hidden_states
 
@@ -561,8 +477,6 @@ class RNNActorNetworkSAC(nn.Module):
         self.N_t = N_t
         self.K = K
         self.P_max = P_max
-        self.tensored_P_max = torch.tensor(P_max)
-        self.numpied_P_max = self.tensored_P_max.detach().numpy()
         self.rnn_type = rnn_type.lower()
         self.rnn_hidden_size = rnn_hidden_size
         self.rnn_num_layers = rnn_num_layers
@@ -648,46 +562,6 @@ class RNNActorNetworkSAC(nn.Module):
         else:
             self.hidden_states = None
     
-    def actor_W_projection_operator(self, raw_W):
-        """Same as in RNNActorNetwork."""
-        raw_W = raw_W.detach()
-        frobenius_norms = torch.linalg.norm(raw_W, dim=(1, 2), ord='fro')
-        traces = torch.einsum('bij,bji->b', raw_W, raw_W.conj().transpose(1, 2)).real
-        exceed_mask = traces > self.tensored_P_max
-        scaling_factors = torch.where(
-            exceed_mask,
-            (self.tensored_P_max.sqrt() / frobenius_norms),
-            torch.ones_like(frobenius_norms)
-        )
-        scaling_factors = scaling_factors.view(-1, 1, 1)
-        projected_W = raw_W * scaling_factors
-        return projected_W
-    
-    def actor_process_raw_actions(self, raw_actions):
-        """Same as in RNNActorNetwork."""
-        batch_size = raw_actions.shape[0]
-        actions = torch.zeros_like(raw_actions)
-        W_raw_actions = raw_actions[:, :2 * self.N_t * self.K]
-        theta_actions = raw_actions[:, 2 * self.N_t * self.K:]
-        theta_real = theta_actions[:, 0::2]
-        theta_imag = theta_actions[:, 1::2]
-        magnitudes = torch.sqrt(theta_real**2 + theta_imag**2)
-        magnitudes = torch.where(magnitudes == 0, 1, magnitudes)
-        normalized_theta_real = theta_real / magnitudes
-        normalized_theta_imag = theta_imag / magnitudes
-        actions[:, 2 * self.N_t * self.K::2] = normalized_theta_real
-        actions[:, 2 * self.N_t * self.K + 1::2] = normalized_theta_imag
-        W_raw_actions = W_raw_actions.reshape(batch_size, self.K, 2 * self.N_t)
-        W_real = W_raw_actions[:, :, 0::2]
-        W_imag = W_raw_actions[:, :, 1::2]
-        raw_W = W_real + 1j * W_imag
-        W = self.actor_W_projection_operator(raw_W)
-        flattened_real = W.real.flatten(start_dim=1)
-        flattened_imag = W.imag.flatten(start_dim=1)
-        actions[:, :2 * self.N_t * self.K:2] = flattened_real
-        actions[:, 1:2 * self.N_t * self.K:2] = flattened_imag
-        return actions
-    
     def _initialize_hidden_states(self, batch_size, device):
         """Initialize hidden states with caching."""
         if self._cached_hidden_states is None or self._last_batch_size != batch_size:
@@ -756,17 +630,19 @@ class RNNActorNetworkSAC(nn.Module):
         std = log_std.exp()
         normal = torch.distributions.Normal(mean, std)
         x_t = normal.rsample()  # Reparameterization trick
-        y_t = torch.tanh(x_t)
-        action = y_t * self.tensored_P_max
-        log_prob = normal.log_prob(x_t)
-        # Enforcing Action Bound
-        log_prob -= torch.log(self.tensored_P_max * (1 - y_t.pow(2)) + 1e-6)
-        log_prob = log_prob.sum(1, keepdim=True)
-        mean = torch.tanh(mean) * self.tensored_P_max
-        return action, log_prob, mean, new_hidden_states
+        raw_action = torch.tanh(x_t)
+        action = process_raw_actions_torch(
+            raw_action, self.N_t, self.K, self.P_max, raw_action.device
+        )
+        log_prob = normal.log_prob(x_t).sum(dim=-1, keepdim=True)
+        log_prob -= torch.log(1 - raw_action.pow(2) + 1e-6).sum(dim=-1, keepdim=True)
+        return action, log_prob, raw_action, new_hidden_states
     
     def get_action(self, state, hidden_states=None):
         """Get deterministic action."""
         mean, log_std, new_hidden_states = self.forward(state, hidden_states)
-        action = torch.tanh(mean) * self.tensored_P_max
+        raw_action = torch.tanh(mean)
+        action = process_raw_actions_torch(
+            raw_action, self.N_t, self.K, self.P_max, raw_action.device
+        )
         return action, new_hidden_states

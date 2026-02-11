@@ -29,6 +29,7 @@ from copy import deepcopy
 from multiprocessing import TimeoutError
 import logging
 from src.environment import RIS_Duplex
+from src.environment.tools.task_manager import EpisodeDifficultyConfig
 
 # ============================================================================
 # Utilities
@@ -291,6 +292,27 @@ class DummyVecEnv(VecEnv):
 
     def step_wait(self):
         results = [env.step(self.state, self.actions) for env in self.envs]
+        """n_envs = len(self.envs)
+
+        def _split_per_env(value):
+            if isinstance(value, (list, tuple)):
+                if len(value) == n_envs:
+                    return list(value)
+                return [value] * n_envs
+            try:
+                if len(value) == n_envs:
+                    return [value[i] for i in range(n_envs)]
+            except TypeError:
+                pass
+            return [value] * n_envs
+
+        states_per_env = _split_per_env(self.state)
+        actions_per_env = _split_per_env(self.actions)
+        results = [
+            env.step(state_i, action_i)
+            for env, state_i, action_i in zip(self.envs, states_per_env, actions_per_env)
+        ]
+        """
         states, current_actions, current_rewards, next_states = map(list, zip(*results))
         self.actions = None
         return self._flatten(states), self._flatten(current_actions), self._flatten(current_rewards), self._flatten(next_states)
@@ -306,18 +328,68 @@ class DummyVecEnv(VecEnv):
         results = np.array(results)[0]
         return results
     
-    def reset(self, difficulty_config = None ):
-        """Reset all underlying environments.
+    @staticmethod
+    def _is_single_difficulty_config(candidate) -> bool:
+        """Return True when candidate looks like one curriculum config payload."""
+        if isinstance(candidate, EpisodeDifficultyConfig):
+            return True
+        if isinstance(candidate, dict):
+            required = {
+                "grid_limits",
+                "angle_is_max",
+                "angle_value",
+                "min_distance_eavesdropper_users",
+                "max_distance_eavesdropper_users",
+                "fully_random",
+            }
+            return required.issubset(set(candidate.keys()))
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 6:
+            return True
+        return all(
+            hasattr(candidate, key)
+            for key in (
+                "grid_limits",
+                "angle_is_max",
+                "angle_value",
+                "min_distance_eavesdropper_users",
+                "max_distance_eavesdropper_users",
+                "fully_random",
+            )
+        )
+
+    def _normalize_difficulty_configs(self, difficulty_config):
+        """Normalize config input to one explicit payload per environment."""
+        if difficulty_config is None:
+            return [None] * len(self.envs)
+
+        if self._is_single_difficulty_config(difficulty_config):
+            return [difficulty_config] * len(self.envs)
+
+        if isinstance(difficulty_config, (list, tuple)):
+            if len(difficulty_config) != len(self.envs):
+                raise ValueError(
+                    "difficulty_config length must match number of envs when passing "
+                    f"per-env configs: {len(difficulty_config)} != {len(self.envs)}"
+                )
+            return list(difficulty_config)
+
+        raise ValueError(f"Unsupported difficulty_config format: {type(difficulty_config)!r}")
+
+    def reset(self, difficulty_config=None):
+        """Reset all underlying environments with optional curriculum payloads.
 
         Args:
-            difficulty_config: Optional curriculum tuple passed to each env.
+            difficulty_config: Either one config (broadcast to all envs) or a list
+                of per-env configs with length `num_envs`.
+
         Returns:
             Flattened observations from all environments.
         """
-        if difficulty_config:
-            obss = [env.reset(chosen_difficulty_config = difficulty_config[0]) for env in self.envs]
-        else:
-            obss = [env.reset() for env in self.envs]
+        normalized_configs = self._normalize_difficulty_configs(difficulty_config)
+        obss = [
+            env.reset(chosen_difficulty_config=config) if config is not None else env.reset()
+            for env, config in zip(self.envs, normalized_configs)
+        ]
         return self._flatten(obss)
 
     def close(self):
@@ -358,6 +430,47 @@ def worker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
     def reset_env(env, chosen_difficulty_config):
         env.reset(chosen_difficulty_config = chosen_difficulty_config)
         pass
+
+    def is_single_difficulty_config(candidate) -> bool:
+        if isinstance(candidate, EpisodeDifficultyConfig):
+            return True
+        if isinstance(candidate, dict):
+            required = {
+                "grid_limits",
+                "angle_is_max",
+                "angle_value",
+                "min_distance_eavesdropper_users",
+                "max_distance_eavesdropper_users",
+                "fully_random",
+            }
+            return required.issubset(set(candidate.keys()))
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 6:
+            return True
+        return all(
+            hasattr(candidate, key)
+            for key in (
+                "grid_limits",
+                "angle_is_max",
+                "angle_value",
+                "min_distance_eavesdropper_users",
+                "max_distance_eavesdropper_users",
+                "fully_random",
+            )
+        )
+
+    def normalize_worker_difficulty_configs(chosen_difficulty_config, num_envs: int):
+        if chosen_difficulty_config is None:
+            return [None] * num_envs
+        if is_single_difficulty_config(chosen_difficulty_config):
+            return [chosen_difficulty_config] * num_envs
+        if isinstance(chosen_difficulty_config, (list, tuple)):
+            if len(chosen_difficulty_config) != num_envs:
+                raise ValueError(
+                    "Worker received per-env difficulty configs with invalid length: "
+                    f"{len(chosen_difficulty_config)} != {num_envs}"
+                )
+            return list(chosen_difficulty_config)
+        raise ValueError(f"Unsupported worker difficulty config format: {type(chosen_difficulty_config)!r}")
 
     def get_state(env):
         return env.get_state()
@@ -441,10 +554,13 @@ def worker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
             
             elif cmd == 'reset':
                 chosen_difficulty_config = data
-                if chosen_difficulty_config is not None:
-                    remote.send([reset_env(env,chosen_difficulty_config) for env in envs])
-                else:
-                    remote.send([env.reset() for env in envs])
+                per_env_configs = normalize_worker_difficulty_configs(chosen_difficulty_config, len(envs))
+                remote.send(
+                    [
+                        reset_env(env, config) if config is not None else env.reset()
+                        for env, config in zip(envs, per_env_configs)
+                    ]
+                )
             
             elif cmd == 'close':
                 remote.close()
